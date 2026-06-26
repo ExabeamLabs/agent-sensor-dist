@@ -416,6 +416,7 @@
           <li><strong>Windows:</strong> Windows 10 or 11 (x86_64)</li>
           <li><strong>Disk:</strong> ~100 MB</li>
           <li><strong>Network:</strong> Port 4982 (hook server) must be available locally</li>
+          <li><strong>Runtime Dependency: curl</strong> — present by default on macOS and Windows 10 (1803+) / Windows 11. Verify: <code>curl --version</code> (Windows: <code>curl.exe --version</code>).</li>
         </ul>
 
         <h2>Download</h2>
@@ -432,14 +433,14 @@
         <p>Replace <code>VERSION</code> with the release you want (e.g. <code>1.0.4</code>).</p>
         <p><strong>Apple Silicon (M1/M2/M3):</strong></p>
         <pre><code>VERSION=1.0.4
-curl -fsSL https://github.com/ExabeamLabs/agent-sensor-dist/releases/download/v${VERSION}/agent-sensor-v${VERSION}-aarch64-apple-darwin \
+sudo curl -fsSL https://github.com/ExabeamLabs/agent-sensor-dist/releases/download/v${VERSION}/agent-sensor-v${VERSION}-aarch64-apple-darwin \
   -o /usr/local/bin/agent-sensor
-chmod +x /usr/local/bin/agent-sensor</code></pre>
+sudo chmod +x /usr/local/bin/agent-sensor</code></pre>
         <p><strong>Intel:</strong></p>
         <pre><code>VERSION=1.0.4
-curl -fsSL https://github.com/ExabeamLabs/agent-sensor-dist/releases/download/v${VERSION}/agent-sensor-v${VERSION}-x86_64-apple-darwin \
+sudo curl -fsSL https://github.com/ExabeamLabs/agent-sensor-dist/releases/download/v${VERSION}/agent-sensor-v${VERSION}-x86_64-apple-darwin \
   -o /usr/local/bin/agent-sensor
-chmod +x /usr/local/bin/agent-sensor</code></pre>
+sudo chmod +x /usr/local/bin/agent-sensor</code></pre>
 
         <h3>Verify the download</h3>
         <p>Always confirm the download is a real binary and not a saved error page:</p>
@@ -468,18 +469,6 @@ agent-sensor --version</code></pre>
         <pre><code>agent-sensor install-service --use-scheduled-task --hook-port 4982</code></pre>
         <p>This registers an ONLOGON scheduled task — no administrator privileges needed.</p>
 
-        <h2>Quick Start</h2>
-        <pre><code># 1. Install hooks for Claude Code, Codex CLI, and Gemini CLI + write default config
-agent-sensor --auto-config
-
-# 2. Start the forwarder (listens on port 4982 by default)
-agent-sensor --hook-port 4982
-
-# 3. After a Claude Code session, inspect the JSONL audit log
-cat ~/.agent-sensor/events.jsonl</code></pre>
-        <p>Preview what <code>--auto-config</code> would change before applying:</p>
-        <pre><code>agent-sensor --auto-config --dry-run</code></pre>
-
         <h2>Configuration</h2>
         <p>The default config file is <code>~/.agent-sensor/config.toml</code>. It is created automatically by <code>--auto-config</code> if it does not already exist. Example:</p>
         <pre><code>[sources]
@@ -495,24 +484,13 @@ max_rotated_files = 5
 # kind = "webhook"
 # url = "https://your-collector.example.com/agent-sensor"
 # token_file = "~/.agent-sensor/webhook.token"</code></pre>
-        <p>The file is never overwritten by subsequent <code>--auto-config</code> runs — edit it freely.</p>
-
-        <p><strong>Environment variables:</strong></p>
-        <table>
-          <tr><th>Variable</th><th>Purpose</th></tr>
-          <tr><td><code>RUST_LOG=agent_sensor=info</code></td><td>Log level (<code>error</code>, <code>warn</code>, <code>info</code>, <code>debug</code>, <code>trace</code>)</td></tr>
-          <tr><td><code>AGENT_SENSOR_KEY</code></td><td>Encryption key (required when <code>--enable-local-encryption</code> is set)</td></tr>
-          <tr><td><code>AGENT_SENSOR_WEBHOOK_TOKEN</code></td><td>Bearer token for webhook sink (alternative to <code>token_file</code>)</td></tr>
-        </table>
+        <p>To forward telemetry to a SIEM, add a <code>webhook</code> sink with the endpoint URL and token file path.</p>
 
         <h2>Install as a Background Service</h2>
         <h3>macOS (launchd)</h3>
-        <pre><code>sudo agent-sensor install-service --hook-port 4982
-
-# Verify
-sudo launchctl list | grep agent-sensor</code></pre>
-        <h3>Windows (scheduled task — no admin)</h3>
-        <pre><code>agent-sensor install-service --use-scheduled-task --hook-port 4982</code></pre>
+        <pre><code>agent-sensor install-service</code></pre>
+        <h3>Windows (scheduled task — no admin required)</h3>
+        <pre><code>agent-sensor install-service --use-scheduled-task</code></pre>
 
         <h2>Verify Installation</h2>
         <pre><code># Check version
@@ -520,37 +498,39 @@ agent-sensor --version
 
 # Check service status
 agent-sensor status
+# Service com.agent-sensor.forwarder: running
+# Current version: 1.0.4
 
 # Send a test event to the hook server
 curl -X POST http://127.0.0.1:4982/claude \
   -H "Content-Type: application/json" \
   -d '{"hook":"SessionStart","sessionId":"test"}'
 
-# Count events captured
-wc -l ~/.agent-sensor/events.jsonl</code></pre>
+# Confirm the event was received (counter should be non-zero)
+agent-sensor metrics | grep agent_sensor_hook_events_received_total</code></pre>
 
         <h2>Upgrading</h2>
-        <p>Repeat the download and install steps with the new version. The new binary replaces the old one at the same path. If running as a service, restart it after replacing the binary:</p>
+        <p>Repeat the download and install steps with the new version. The new binary replaces the old one at the same path. If the service is running, reinstall it so the service manifest points to the new binary:</p>
         <pre><code># macOS
-sudo launchctl stop com.exabeam.agent-sensor
-sudo launchctl start com.exabeam.agent-sensor</code></pre>
+agent-sensor uninstall-service &amp;&amp; agent-sensor install-service</code></pre>
+        <pre><code># Windows
+agent-sensor uninstall-service
+agent-sensor install-service --use-scheduled-task</code></pre>
 
         <h2>Uninstall</h2>
         <h3>macOS</h3>
-        <pre><code>sudo agent-sensor uninstall-service        # Remove launchd service (if installed)
-sudo rm /usr/local/bin/agent-sensor        # Remove binary
-rm -rf ~/.agent-sensor/                    # Remove config and logs (optional)</code></pre>
+        <pre><code>agent-sensor uninstall-service        # Remove launchd service (if installed)
+sudo rm /usr/local/bin/agent-sensor   # Remove binary
+rm -rf ~/.agent-sensor/               # Remove config and logs (optional)</code></pre>
         <p>To also remove the CLI hook registrations:</p>
-        <pre><code>rm -f ~/.claude/hooks/claude-watch-hook.sh
-rm -f ~/.codex/hooks/codex-hook.sh
-rm -f ~/.gemini/hooks/gemini-hook.sh</code></pre>
+        <pre><code>rm -rf ~/.claude ~/.codex ~/.gemini</code></pre>
         <h3>Windows</h3>
-        <pre><code>agent-sensor uninstall-service             # Remove scheduled task (if installed)
-# Then delete agent-sensor.exe from your PATH directory</code></pre>
+        <pre><code>agent-sensor uninstall-service   # Remove scheduled task (if installed)
+# Then delete agent-sensor.exe from its directory on your PATH</code></pre>
 
         <h2>Troubleshooting</h2>
-        <h3>"Not: command not found" when running the binary</h3>
-        <p>The file is an HTML/text error page, not a real binary (typically from a failed download).</p>
+        <h3>Binary fails to run (<code>exec format error</code> or similar)</h3>
+        <p>This usually means the downloaded file is an HTML error page rather than a real binary.</p>
         <pre><code>file ./agent-sensor
 # Real binary:    "Mach-O 64-bit executable"
 # Saved error page: "ASCII text" or "HTML document text"</code></pre>
@@ -563,8 +543,8 @@ agent-sensor --hook-port 4992   # Or use a different port</code></pre>
 
         <h3>No events appearing</h3>
         <ol>
-          <li>Verify the forwarder is running: <code>lsof -i :4982</code></li>
-          <li>Check hooks are installed: <code>cat ~/.claude/settings.json | grep claude-watch-hook</code></li>
+          <li>Verify the agent-sensor is running: <code>lsof -i :4982</code></li>
+          <li>Check hooks are installed: <code>grep hook-server ~/.claude/settings.json</code></li>
           <li>Send a test event manually (see <strong>Verify Installation</strong> above)</li>
         </ol>
 

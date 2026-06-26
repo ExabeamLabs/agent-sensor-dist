@@ -411,7 +411,7 @@
       <div class="prose" style="margin-top:8px;">
 
         <h2 style="border-top:none;padding-top:0;margin-top:0;">Overview</h2>
-        <p><code>agent-sensor</code> is an endpoint collector for Agent Behavior Analytics. It captures events from AI CLI tools (Claude Code, Codex, Gemini CLI, OpenClaw) and forwards them — normalized to Exabeam Common Information Model (CIM) — to a local JSONL audit log and/or a SIEM webhook.</p>
+        <p><code>agent-sensor</code> is an endpoint collector for Agent Behavior Analytics. It captures events from AI CLI tools (Claude Code, Codex CLI, Gemini CLI) and forwards them — normalized to Exabeam CIM — to a local JSONL audit log and/or a SIEM webhook.</p>
 
         <h2>Synopsis</h2>
         <pre><code>agent-sensor [OPTIONS] [SUBCOMMAND]</code></pre>
@@ -434,7 +434,7 @@
         <h2>Subcommands</h2>
 
         <h3>run <em>(default)</em></h3>
-        <p>Start the forwarder. Listens for hooks from AI CLIs and tails Claude Code transcripts. Runs until terminated (SIGINT / SIGTERM on macOS; Ctrl+C on Windows). SIGHUP triggers a clean in-place restart.</p>
+        <p>Start the agent-sensor. Listens for hooks from AI CLIs and tails Claude Code transcripts. Runs until terminated (SIGINT / SIGTERM on macOS; Ctrl+C on Windows). On macOS, SIGHUP triggers a clean in-place restart.</p>
         <pre><code>agent-sensor run
 agent-sensor --hook-port 4982 run</code></pre>
         <p>On startup, the bound port is printed in a machine-readable line:</p>
@@ -456,37 +456,33 @@ agent-sensor check-config /path/to/custom-config.toml</code></pre>
         <h3>install-service</h3>
         <p>Install <code>agent-sensor</code> as a background service.</p>
         <ul>
-          <li><strong>macOS:</strong> launchd plist (requires sudo)</li>
-          <li><strong>Windows:</strong> Windows Service (requires administrator) or scheduled task (no elevation)</li>
+          <li><strong>macOS:</strong> launchd plist (user space, no admin required)</li>
+          <li><strong>Windows:</strong> ONLOGON scheduled task (no admin required)</li>
         </ul>
-        <pre><code># macOS / Linux
-sudo agent-sensor install-service --hook-port 4982
+        <pre><code># macOS
+agent-sensor install-service
 
 # Windows — scheduled task (no admin required)
-agent-sensor install-service --use-scheduled-task --hook-port 4982</code></pre>
+agent-sensor install-service --use-scheduled-task</code></pre>
         <table>
           <tr><th>Flag</th><th>Description</th></tr>
           <tr><td><code>--use-scheduled-task</code></td><td>Install as a Windows ONLOGON scheduled task instead of a Windows Service. Ignored on macOS.</td></tr>
-          <tr><td><code>--hook-port &lt;PORT&gt;</code></td><td>Port to embed in the service manifest.</td></tr>
+          <tr><td><code>--hook-port &lt;PORT&gt;</code></td><td>Port to embed in the service manifest. Default port is 4982</td></tr>
           <tr><td><code>--port-range &lt;MIN-MAX&gt;</code></td><td>Port range constraint to embed in the service manifest.</td></tr>
           <tr><td><code>--project-dir &lt;PATH&gt;</code></td><td>Sets AGENT_SENSOR_PROJECT_DIR in the service environment.</td></tr>
         </table>
 
         <h3>uninstall-service</h3>
         <p>Remove the background service installed by <code>install-service</code>.</p>
-        <pre><code>sudo agent-sensor uninstall-service   # macOS
-agent-sensor uninstall-service        # Windows</code></pre>
+        <pre><code>agent-sensor uninstall-service   # macOS, Windows</code></pre>
 
         <h3>status</h3>
         <p>Print whether the background service is running, stopped, or not installed.</p>
         <pre><code>agent-sensor status</code></pre>
 
         <h3>metrics</h3>
-        <p>Fetch and print current forwarder metrics in Prometheus text format. The forwarder must be running.</p>
-        <pre><code>agent-sensor metrics
-
-# When multiple forwarders are running, scope to a specific project directory:
-agent-sensor metrics --project-dir /path/to/project</code></pre>
+        <p>Fetch and print current agent-sensor metrics in Prometheus text format. The agent-sensor must be running.</p>
+        <pre><code>agent-sensor metrics</code></pre>
 
         <h3>replay-dlq</h3>
         <p>Re-inject events from the dead-letter queue (<code>~/.agent-sensor/dlq.jsonl</code>) through their original sink. Use this to recover events that failed to deliver (e.g. webhook was temporarily unreachable).</p>
@@ -511,17 +507,17 @@ agent-sensor replay-dlq --sink my-webhook</code></pre>
         <h3>update</h3>
         <p>Check for or apply a pending update (requires <code>[update] enabled = true</code> in config).</p>
         <pre><code>agent-sensor update            # Check and apply
-agent-sensor update --check    # Poll GitHub for a new release, update state file, exit (does not apply)
+agent-sensor update --check    # Poll GitHub for a new release and update state file (does not apply)
 agent-sensor update --rollback # Restore the previous binary from .prev</code></pre>
 
         <h2>Common Workflows</h2>
 
         <h3>First-time setup</h3>
-        <pre><code># Install hooks for all supported CLIs and write default config
+        <pre><code># Install hooks for all supported agent CLIs and write default config
 agent-sensor --auto-config
 
-# Start the forwarder on port 4982
-agent-sensor --hook-port 4982</code></pre>
+# Start the agent-sensor on the default port
+agent-sensor install-service</code></pre>
 
         <h3>Preview hook installation without applying</h3>
         <pre><code>agent-sensor --auto-config --dry-run</code></pre>
@@ -535,14 +531,17 @@ token_file = "~/.agent-sensor/webhook.token"</code></pre>
         <p>Save the webhook bearer token:</p>
         <pre><code>echo -n "YOUR_TOKEN" > ~/.agent-sensor/webhook.token
 chmod 600 ~/.agent-sensor/webhook.token</code></pre>
-        <p>Restart the forwarder for the new config to take effect.</p>
+        <p>Restart the agent-sensor for the new config to take effect.</p>
 
         <h3>Validate config before restarting</h3>
-        <pre><code>agent-sensor check-config && sudo launchctl kickstart -k system/com.exabeam.agent-sensor</code></pre>
+        <pre><code>agent-sensor check-config && agent-sensor uninstall-service && agent-sensor install-service</code></pre>
 
         <h3>Inspect captured events</h3>
         <pre><code># Raw JSONL
 cat ~/.agent-sensor/events.jsonl
+
+# Check the agent_sensor_hook_events_received_total metrics
+agent-sensor metrics | grep agent_sensor_hook_events_received_total
 
 # Filter by source
 jq 'select(.framework=="claude_code")' ~/.agent-sensor/events.jsonl
