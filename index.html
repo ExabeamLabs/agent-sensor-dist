@@ -410,7 +410,7 @@
       <div class="section-head">
         <div class="kicker">Supported Platforms</div>
         <h2>Built for macOS and Windows endpoints</h2>
-        <p>Prerequisites: ~100 MB disk, and local port 4982 available for the hook server.</p>
+        <p>Prerequisites: ~100 MB disk, local port 4982 available for the hook server, and <code style="background:rgba(15,25,50,0.06);padding:2px 6px;border-radius:5px;">curl</code> (present by default on macOS and Windows 10 1803+ / Windows 11).</p>
       </div>
       <div class="grid3">
         <div class="card platform-card">
@@ -468,9 +468,9 @@
           <div class="codehead"><span>Terminal</span><button class="copy" data-copy="cmd-mac-arm">Copy</button></div>
           <pre id="cmd-mac-arm"><span class="c1"># Replace VERSION with the release you want, e.g. 1.0.4</span>
 <span class="c2">VERSION</span>=1.0.4
-curl -fsSL https://github.com/ExabeamLabs/agent-sensor-dist/releases/download/v${VERSION}/agent-sensor-v${VERSION}-aarch64-apple-darwin \
+sudo curl -fsSL https://github.com/ExabeamLabs/agent-sensor-dist/releases/download/v${VERSION}/agent-sensor-v${VERSION}-aarch64-apple-darwin \
   -o /usr/local/bin/agent-sensor
-chmod +x /usr/local/bin/agent-sensor</pre>
+sudo chmod +x /usr/local/bin/agent-sensor</pre>
         </div>
       </div>
 
@@ -479,9 +479,9 @@ chmod +x /usr/local/bin/agent-sensor</pre>
           <div class="codehead"><span>Terminal</span><button class="copy" data-copy="cmd-mac-intel">Copy</button></div>
           <pre id="cmd-mac-intel"><span class="c1"># Replace VERSION with the release you want, e.g. 1.0.4</span>
 <span class="c2">VERSION</span>=1.0.4
-curl -fsSL https://github.com/ExabeamLabs/agent-sensor-dist/releases/download/v${VERSION}/agent-sensor-v${VERSION}-x86_64-apple-darwin \
+sudo curl -fsSL https://github.com/ExabeamLabs/agent-sensor-dist/releases/download/v${VERSION}/agent-sensor-v${VERSION}-x86_64-apple-darwin \
   -o /usr/local/bin/agent-sensor
-chmod +x /usr/local/bin/agent-sensor</pre>
+sudo chmod +x /usr/local/bin/agent-sensor</pre>
         </div>
       </div>
 
@@ -501,8 +501,8 @@ agent-sensor --version</pre>
         <pre id="cmd-quickstart"><span class="c1"># 1. Install hooks for Claude Code, Codex CLI, and Gemini CLI + write default config</span>
 agent-sensor --auto-config
 
-<span class="c1"># 2. Start the forwarder (listens on port 4982 by default)</span>
-agent-sensor --hook-port 4982
+<span class="c1"># 2. Install and start as a background service</span>
+agent-sensor install-service
 
 <span class="c1"># 3. After a Claude Code session, inspect the JSONL audit log</span>
 cat ~/.agent-sensor/events.jsonl</pre>
@@ -566,7 +566,7 @@ max_rotated_files = 5
         <div class="cmd-list">
           <div class="cmd-row">
             <div class="cmd-name">run<span class="pill">default</span></div>
-            <div class="cmd-desc">Start the forwarder. Listens for hooks from AI CLIs and tails Claude Code transcripts. Runs until terminated; SIGHUP triggers a clean in-place restart.</div>
+            <div class="cmd-desc">Start the forwarder. Listens for hooks from AI CLIs and tails Claude Code transcripts. Runs until terminated (SIGINT / SIGTERM on macOS; Ctrl+C on Windows). On macOS, SIGHUP triggers a clean in-place restart.</div>
           </div>
           <div class="cmd-row">
             <div class="cmd-name">version</div>
@@ -582,7 +582,7 @@ max_rotated_files = 5
           </div>
           <div class="cmd-row">
             <div class="cmd-name">install-service</div>
-            <div class="cmd-desc">Install as a background service: launchd plist on macOS (requires sudo), Windows Service or scheduled task on Windows (no elevation needed for the scheduled task path).</div>
+            <div class="cmd-desc">Install as a background service: launchd plist on macOS (user space, no admin required), or ONLOGON scheduled task on Windows (no admin required). Use <code>--use-scheduled-task</code> on Windows.</div>
           </div>
           <div class="cmd-row">
             <div class="cmd-name">uninstall-service</div>
