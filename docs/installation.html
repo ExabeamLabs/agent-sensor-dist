@@ -412,8 +412,8 @@
 
         <h2 style="border-top:none;padding-top:0;margin-top:0;">Prerequisites</h2>
         <ul>
-          <li><strong>macOS:</strong> 11.0 (Big Sur) or later</li>
-          <li><strong>Windows:</strong> Windows 10 or 11 (x86_64)</li>
+          <li><strong>macOS:</strong> 11.0 (Big Sur) or later (x86_64 and Apple Silicon)</li>
+          <li><strong>Windows:</strong> Windows 10 (1803+) or Windows 11 (x86_64)</li>
           <li><strong>Disk:</strong> ~100 MB</li>
           <li><strong>Network:</strong> Port 4982 (hook server) must be available locally</li>
           <li><strong>Runtime Dependency: curl</strong> — present by default on macOS and Windows 10 (1803+) / Windows 11. Verify: <code>curl --version</code> (Windows: <code>curl.exe --version</code>).</li>
@@ -429,7 +429,6 @@
         </table>
 
         <h2>macOS</h2>
-        <h3>Install via curl (recommended)</h3>
         <p>Replace <code>VERSION</code> with the release you want (e.g. <code>1.0.4</code>).</p>
         <p><strong>Apple Silicon (M1/M2/M3):</strong></p>
         <pre><code>VERSION=1.0.4
@@ -451,11 +450,6 @@ sudo chmod +x /usr/local/bin/agent-sensor</code></pre>
 
 agent-sensor --version</code></pre>
 
-        <h3>Gatekeeper (macOS security)</h3>
-        <p>On first run macOS may block the binary with "cannot be opened because the developer cannot be verified." To allow it:</p>
-        <pre><code>xattr -d com.apple.quarantine /usr/local/bin/agent-sensor</code></pre>
-        <p>Or: <strong>System Settings → Privacy &amp; Security → Allow Anyway</strong>.</p>
-
         <h2>Windows</h2>
         <ol>
           <li>Download <code>agent-sensor-v{VERSION}-x86_64-pc-windows-gnu.exe</code> from the <a href="https://github.com/ExabeamLabs/agent-sensor-dist/releases" target="_blank" rel="noopener">Releases page</a>.</li>
@@ -465,11 +459,16 @@ agent-sensor --version</code></pre>
         <p>Verify in PowerShell:</p>
         <pre><code>agent-sensor --version</code></pre>
 
-        <h3>Windows service (no admin required)</h3>
-        <pre><code>agent-sensor install-service --use-scheduled-task --hook-port 4982</code></pre>
-        <p>This registers an ONLOGON scheduled task — no administrator privileges needed.</p>
-
         <h2>Configuration</h2>
+        <blockquote>
+          <p><strong>⚠ <code>--auto-config</code> is required.</strong> You must run <code>--auto-config</code> to install hooks for agent CLI and install agent-sensor default configuration. You must restart agent-sensor after running <code>--auto-config</code> or updating <code>~/.agent-sensor/config.toml</code>.</p>
+        </blockquote>
+        <pre><code># Preview every change without applying
+agent-sensor --auto-config --dry-run
+
+# Apply
+agent-sensor --auto-config</code></pre>
+        <p>This installs hooks for Claude Code, Codex CLI, and Gemini CLI at <code>~/.claude</code>, <code>~/.codex</code>, and <code>~/.gemini</code>. Restart the agent-sensor to pick up the new hook configurations.</p>
         <p>The default config file is <code>~/.agent-sensor/config.toml</code>. It is created automatically by <code>--auto-config</code> if it does not already exist. Example:</p>
         <pre><code>[sources]
 
@@ -483,7 +482,7 @@ max_rotated_files = 5
 # [[sinks]]
 # kind = "webhook"
 # url = "https://your-collector.example.com/agent-sensor"
-# token_file = "~/.agent-sensor/webhook.token"</code></pre>
+# token_file = "Users/YOU/.agent-sensor/webhook.token"</code></pre>
         <p>To forward telemetry to a SIEM, add a <code>webhook</code> sink with the endpoint URL and token file path.</p>
 
         <h2>Install as a Background Service</h2>
@@ -547,9 +546,6 @@ agent-sensor --hook-port 4992   # Or use a different port</code></pre>
           <li>Check hooks are installed: <code>grep hook-server ~/.claude/settings.json</code></li>
           <li>Send a test event manually (see <strong>Verify Installation</strong> above)</li>
         </ol>
-
-        <h3>macOS Gatekeeper blocks the binary</h3>
-        <p>See the <strong>Gatekeeper</strong> section above.</p>
 
       </div>
 

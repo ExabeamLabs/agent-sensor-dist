@@ -56,16 +56,6 @@ file /usr/local/bin/agent-sensor
 agent-sensor --version
 ```
 
-#### Gatekeeper (macOS security)
-
-On first run macOS may block the binary with "cannot be opened because the developer cannot be verified." To allow it:
-
-```sh
-xattr -d com.apple.quarantine /usr/local/bin/agent-sensor
-```
-
-Or: **System Settings → Privacy & Security → Allow Anyway**.
-
 ---
 
 ### Windows
@@ -84,14 +74,21 @@ agent-sensor --version
 
 ## Configuration
 
+> [!IMPORTANT]
+> **`--auto-config` is required.** You must run `--auto-config` to install hooks for agent CLI
+> and install agent-sensor default configuration. Update agent-sensor configurations before starting
+> the agent-sensor. You must restart agent-sensor after running `--auto-config` or 
+> updating `~/.agent-sensor/config.toml`.
+
 ```sh
 # Preview every change without applying
 agent-sensor --auto-config --dry-run
+
 # Apply
 agent-sensor --auto-config
 ```
 
-This installs hooks for Claude Code, Codex CLI, and Gemini CLI at `~/.claude`, `~/.codex`, and `~/.gemini`. Restart each agent to pick up the new hook configurations.
+This installs hooks for Claude Code, Codex CLI, and Gemini CLI at `~/.claude`, `~/.codex`, and `~/.gemini`. Restart the agent-sensor to pick up the new hook configurations.
 
 The default config file is `~/.agent-sensor/config.toml`. It is created automatically by `--auto-config` if it does not already exist. Example:
 
@@ -108,7 +105,7 @@ max_rotated_files = 5
 # [[sinks]]
 # kind = "webhook"
 # url = "https://your-collector.example.com/agent-sensor"
-# token_file = "~/.agent-sensor/webhook.token"
+# token_file = "Users/YOU/.agent-sensor/webhook.token"
 ```
 
 To forward telemetry to a SIEM, add a `webhook` sink with the endpoint URL and token file path.
