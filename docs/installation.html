@@ -461,29 +461,38 @@ agent-sensor --version</code></pre>
 
         <h2>Configuration</h2>
         <blockquote>
-          <p><strong>⚠ <code>--auto-config</code> is required.</strong> You must run <code>--auto-config</code> to install hooks for agent CLI and install agent-sensor default configuration. You must restart agent-sensor after running <code>--auto-config</code> or updating <code>~/.agent-sensor/config.toml</code>.</p>
+          <p><strong>⚠ <code>--auto-config</code> is required.</strong> You must run <code>--auto-config</code> to install hooks for agent CLI and install agent-sensor default configuration. Update agent-sensor configurations before starting the agent-sensor. You must restart agent-sensor after running <code>--auto-config</code> or updating <code>~/.agent-sensor/config.toml</code>.</p>
         </blockquote>
         <pre><code># Preview every change without applying
 agent-sensor --auto-config --dry-run
 
 # Apply
 agent-sensor --auto-config</code></pre>
-        <p>This installs hooks for Claude Code, Codex CLI, and Gemini CLI at <code>~/.claude</code>, <code>~/.codex</code>, and <code>~/.gemini</code>. Restart the agent-sensor to pick up the new hook configurations.</p>
-        <p>The default config file is <code>~/.agent-sensor/config.toml</code>. It is created automatically by <code>--auto-config</code> if it does not already exist. Example:</p>
+        <p>This installs hooks for Claude Code, Codex CLI, and Gemini CLI at <code>~/.claude</code>, <code>~/.codex</code>, and <code>~/.gemini</code>. It also creates the default config file at <code>~/.agent-sensor/config.toml</code>. Restart the agent-sensor to pick up the new hook configurations.</p>
+
+        <h3>Configure Sinks</h3>
+        <p>A <strong>JSONL</strong> sink is configured automatically with <code>--auto-config</code>. The JSONL sink stores the agent telemetry in a local file.</p>
+        <p>Configure a <strong>webhook</strong> sink in <code>~/.agent-sensor/config.toml</code> to forward the agent telemetry to an Exabeam SIEM using the following steps.</p>
+        <ol>
+          <li>The admin creates an Exabeam webhook cloud-collector with <code>Format=Raw</code> once.</li>
+          <li>Obtain the Exabeam webhook collector <code>url</code> and <code>token</code> securely.</li>
+          <li>Save the webhook token at <code>{HOME}/.agent-sensor/webhook.token</code>.</li>
+          <li>Update the webhook sink url.</li>
+        </ol>
         <pre><code>[sources]
 
 [[sinks]]
 kind = "jsonl"
-path = "/Users/YOU/.agent-sensor/events.jsonl"
+path = "{HOME}/.agent-sensor/events.jsonl"
 rotation_size_mb = 100
 max_rotated_files = 5
 
 # Uncomment to forward events to Exabeam or another SIEM:
-# [[sinks]]
-# kind = "webhook"
-# url = "https://your-collector.example.com/agent-sensor"
-# token_file = "Users/YOU/.agent-sensor/webhook.token"</code></pre>
-        <p>To forward telemetry to a SIEM, add a <code>webhook</code> sink with the endpoint URL and token file path.</p>
+[[sinks]]
+kind = "webhook"
+url = "{EXABEAM_WEBHOOK}"
+token_file = "{HOME}/.agent-sensor/webhook.token"</code></pre>
+        <p>Restart agent-sensor after every change to <code>~/.agent-sensor/config.toml</code>.</p>
 
         <h2>Install as a Background Service</h2>
         <h3>macOS (launchd)</h3>
@@ -491,7 +500,7 @@ max_rotated_files = 5
         <h3>Windows (scheduled task — no admin required)</h3>
         <pre><code>agent-sensor install-service --use-scheduled-task</code></pre>
 
-        <h2>Verify Installation</h2>
+        <h2 id="verify-installation">Verify Installation</h2>
         <pre><code># Check version
 agent-sensor --version
 
@@ -509,7 +518,24 @@ curl -X POST http://127.0.0.1:4982/claude \
 agent-sensor metrics | grep agent_sensor_hook_events_received_total</code></pre>
 
         <h2>Upgrading</h2>
-        <p>Repeat the download and install steps with the new version. The new binary replaces the old one at the same path. If the service is running, reinstall it so the service manifest points to the new binary:</p>
+        <p>Repeat the download and install steps with the new version. The new binary replaces the old one at the same path. If the service is running, uninstall agent-sensor before saving the new binary.</p>
+        <pre><code># macOS
+
+# Uninstall service before upgrade
+agent-sensor uninstall-service
+
+# After upgrade, start the service
+agent-sensor install-service</code></pre>
+        <pre><code># Windows
+
+# Uninstall service before upgrade
+agent-sensor uninstall-service
+
+# After upgrade, start the service
+agent-sensor install-service --use-scheduled-task</code></pre>
+
+        <h2>Restarting</h2>
+        <p>The agent-sensor needs to be restarted after any configuration changes to the hook configs or agent-sensor config.</p>
         <pre><code># macOS
 agent-sensor uninstall-service &amp;&amp; agent-sensor install-service</code></pre>
         <pre><code># Windows
@@ -544,8 +570,12 @@ agent-sensor --hook-port 4992   # Or use a different port</code></pre>
         <ol>
           <li>Verify the agent-sensor is running: <code>lsof -i :4982</code></li>
           <li>Check hooks are installed: <code>grep hook-server ~/.claude/settings.json</code></li>
-          <li>Send a test event manually (see <strong>Verify Installation</strong> above)</li>
+          <li>Send a test event manually (see <a href="#verify-installation">Verify Installation</a> above)</li>
         </ol>
+
+        <h3>macOS Gatekeeper blocks the binary</h3>
+        <p>macOS may show a security warning the first time you run an unsigned binary. Right-click the binary in Finder, choose <strong>Open</strong>, and confirm when prompted — or run:</p>
+        <pre><code>xattr -dr com.apple.quarantine /usr/local/bin/agent-sensor</code></pre>
 
       </div>
 
