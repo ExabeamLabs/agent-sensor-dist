@@ -26,6 +26,15 @@ Binaries are published as [GitHub Releases](https://github.com/ExabeamLabs/agent
 
 ## Quick Install
 
+### macOS (Homebrew)
+
+```sh
+brew tap ExabeamLabs/agent-sensor https://github.com/ExabeamLabs/agent-sensor-dist
+brew install agent-sensor
+```
+
+Upgrading later: `brew upgrade agent-sensor`.
+
 ### macOS (Apple Silicon)
 
 ```sh
