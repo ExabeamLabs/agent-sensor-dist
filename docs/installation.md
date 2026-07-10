@@ -23,7 +23,18 @@ Download the binary for your platform from the [Releases page](https://github.co
 
 ---
 
-### macOS
+### macOS (Homebrew)
+
+```sh
+brew tap ExabeamLabs/agent-sensor https://github.com/ExabeamLabs/agent-sensor-dist
+brew install agent-sensor
+```
+
+This repo isn't named `homebrew-*`, so it can't be tapped with the short `brew tap ExabeamLabs/agent-sensor-dist` form — the full URL above is required. Homebrew auto-detects Intel vs. Apple Silicon and installs the matching binary.
+
+Upgrade with `brew upgrade agent-sensor`. Uninstall with `brew uninstall agent-sensor` (this only removes the binary — see [Uninstall](#uninstall) below for removing config/hooks).
+
+### macOS (manual)
 
 Replace `VERSION` with the release you want (e.g. `1.0.4`).
 
