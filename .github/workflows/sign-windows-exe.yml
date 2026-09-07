@@ -1,0 +1,243 @@
+name: Sign Windows Release Binary
+
+# Signs the Windows .exe attached to a release, then publishes the release.
+#
+# Why it works this way: this repo holds no source, so CI cannot build the .exe. The binary is
+# built in the private Exabeam/agent-sensor repo and attached to a release by `make gh-release`,
+# which creates the release as a DRAFT. Draft assets are not publicly downloadable, so an unsigned
+# .exe is never reachable by a customer. This workflow downloads the draft's .exe, signs it,
+# replaces the asset, and only then flips the release to published.
+#
+# If any step here fails the release stays a draft — that is the intended failure mode. Never
+# publish by hand to work around a signing failure.
+#
+# Signing uses DigiCert ONE Software Trust Manager (KeyLocker) via smctl, the same backend as
+# next-gen-site-collector-installer/.github/workflows/digicert-sign-ps1-on-develop.yaml. The
+# required secrets are identical, so they can be shared at the org level.
+
+on:
+  # Fires when `make gh-release` saves the draft. GitHub sends `created` both for a saved draft and
+  # for a release published without a draft step, so both paths are covered.
+  release:
+    types: [created]
+  # Manual re-run, e.g. after fixing a secret. Safe to re-run: an already-signed asset is skipped.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to sign (e.g. v1.2.3)"
+        required: true
+
+permissions:
+  contents: write
+
+# Two runs against the same tag would race on the same release asset.
+concurrency:
+  group: sign-windows-exe-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+env:
+  TAG: ${{ github.event.release.tag_name || inputs.tag }}
+  GH_TOKEN: ${{ github.token }}
+  # Kept for parity with the installer repo's signing workflow. The timestamp is asserted
+  # explicitly in the verify step rather than assumed.
+  TIMESTAMP_URL: "https://timestamp.digicert.com"
+
+jobs:
+  sign-windows-exe:
+    # signtool.exe and Get-AuthenticodeSignature are Windows-only.
+    runs-on: windows-latest
+
+    steps:
+      # ---------------- LOCATE AND DOWNLOAD THE UNSIGNED .exe ----------------
+      # No checkout: the repo contents are irrelevant, only the release asset matters.
+      - name: Download the Windows binary from the release
+        id: download
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Path unsigned -Force | Out-Null
+
+          Write-Host "Release tag: $env:TAG"
+          gh release download $env:TAG --repo $env:GITHUB_REPOSITORY --pattern '*.exe' --dir unsigned
+          if ($LASTEXITCODE -ne 0) { throw "gh release download failed for $env:TAG" }
+
+          $exes = Get-ChildItem -Path unsigned -Filter '*.exe'
+
+          # Exactly one .exe is expected. Zero means the release was cut without the Windows
+          # binary; more than one means the naming convention drifted and we must not guess which
+          # artifact customers download.
+          if ($exes.Count -eq 0) {
+            throw "No .exe asset found on release $env:TAG. Was bin/*.exe uploaded?"
+          }
+          if ($exes.Count -gt 1) {
+            throw "Expected exactly one .exe on release $env:TAG, found $($exes.Count): $($exes.Name -join ', ')"
+          }
+
+          $exe = $exes[0]
+          Write-Host "Found asset: $($exe.Name)"
+
+          # Sanity-check the documented naming convention (docs/installation.md links this exact
+          # filename), so a mis-named upload is caught before it is signed and published.
+          if ($exe.Name -notmatch '^agent-sensor-v.+-x86_64-pc-windows-gnu\.exe$') {
+            throw "Asset '$($exe.Name)' does not match agent-sensor-v{VERSION}-x86_64-pc-windows-gnu.exe"
+          }
+
+          Add-Content $env:GITHUB_OUTPUT "exe_path=$($exe.FullName)"
+          Add-Content $env:GITHUB_OUTPUT "exe_name=$($exe.Name)"
+
+      - name: Check whether the binary is already signed
+        id: check
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = '${{ steps.download.outputs.exe_path }}'
+          $sig = Get-AuthenticodeSignature $exe
+
+          Write-Host "Current signature status: $($sig.Status)"
+          Write-Host "SHA256 before: $((Get-FileHash $exe -Algorithm SHA256).Hash)"
+
+          # Makes a re-run idempotent: signing an already-signed binary would replace a good
+          # signature for no reason and change the published hash again.
+          if ($sig.Status -eq 'Valid') {
+            Write-Host "Already validly signed - skipping the signing steps."
+            Add-Content $env:GITHUB_OUTPUT "needs_signing=false"
+          } else {
+            Add-Content $env:GITHUB_OUTPUT "needs_signing=true"
+          }
+
+      # ---------------- DIGICERT KEYLOCKER SETUP ----------------
+      - name: Setup DigiCert Software Trust Manager
+        if: steps.check.outputs.needs_signing == 'true'
+        uses: digicert/code-signing-software-trust-action@v1.0.0
+
+      - name: Decode DigiCert client auth certificate
+        if: steps.check.outputs.needs_signing == 'true'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $b64 = "${{ secrets.SM_CLIENT_CERT_FILE_B64 }}"
+          if ([string]::IsNullOrWhiteSpace($b64)) {
+            throw "Secret SM_CLIENT_CERT_FILE_B64 is not set on this repository."
+          }
+          $out = Join-Path $env:RUNNER_TEMP "digicert-client-auth.p12"
+          [IO.File]::WriteAllBytes($out, [Convert]::FromBase64String($b64))
+
+      - name: Export DigiCert environment
+        if: steps.check.outputs.needs_signing == 'true'
+        shell: pwsh
+        run: |
+          Add-Content $env:GITHUB_ENV "SM_HOST=${{ secrets.SM_HOST }}"
+          Add-Content $env:GITHUB_ENV "SM_API_KEY=${{ secrets.SM_API_KEY }}"
+          Add-Content $env:GITHUB_ENV "SM_CLIENT_CERT_FILE=$env:RUNNER_TEMP\digicert-client-auth.p12"
+          Add-Content $env:GITHUB_ENV "SM_CLIENT_CERT_PASSWORD=${{ secrets.SM_CLIENT_CERT_PASSWORD }}"
+          Add-Content $env:GITHUB_ENV "SM_KEYPAIR_ALIAS=${{ secrets.SM_KEYPAIR_ALIAS }}"
+
+      - name: Add signtool to PATH
+        if: steps.check.outputs.needs_signing == 'true'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $signtool = Get-ChildItem -Path "C:\Program Files (x86)\Windows Kits\10\bin" -Recurse -Filter "signtool.exe" |
+            Where-Object { $_.FullName -match "x64" } |
+            Select-Object -First 1
+          if (-not $signtool) { throw "signtool.exe not found in Windows Kits" }
+          $signtool.DirectoryName | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          Write-Host "Added signtool to PATH: $($signtool.DirectoryName)"
+
+      - name: Sync the signing certificate into the Windows store
+        if: steps.check.outputs.needs_signing == 'true'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # Required for PE (.exe) signing and NOT for .ps1 signing, which is why the installer
+          # repo's workflow has no equivalent step. Authenticode signing of a PE goes through
+          # signtool + the KeyLocker CNG provider, which resolves the certificate from the current
+          # user's store; certsync is what puts it there.
+          smctl windows certsync --keypair-alias="$env:SM_KEYPAIR_ALIAS"
+          if ($LASTEXITCODE -ne 0) { throw "smctl windows certsync failed" }
+
+      # ---------------- SIGN ----------------
+      - name: Sign the binary
+        if: steps.check.outputs.needs_signing == 'true'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = '${{ steps.download.outputs.exe_path }}'
+
+          smctl sign --keypair-alias "$env:SM_KEYPAIR_ALIAS" --input "$exe" --verbose
+          if ($LASTEXITCODE -ne 0) { throw "smctl sign failed for $exe" }
+
+          Write-Host "SHA256 after: $((Get-FileHash $exe -Algorithm SHA256).Hash)"
+
+      - name: Verify the signature and timestamp
+        if: steps.check.outputs.needs_signing == 'true'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = '${{ steps.download.outputs.exe_path }}'
+
+          $sig = Get-AuthenticodeSignature $exe
+          Write-Host "Status:      $($sig.Status)"
+          Write-Host "Signer:      $($sig.SignerCertificate.Subject)"
+          Write-Host "Thumbprint:  $($sig.SignerCertificate.Thumbprint)"
+          if ($sig.Status -ne 'Valid') {
+            throw "Signature is not valid: $($sig.Status) - $($sig.StatusMessage)"
+          }
+
+          # Chain validation against the Authenticode policy, which Get-AuthenticodeSignature
+          # alone does not fully perform.
+          $verify = signtool verify /pa /v $exe 2>&1 | Out-String
+          Write-Host $verify
+          if ($LASTEXITCODE -ne 0) { throw "signtool verify failed" }
+
+          # Asserted rather than assumed: smctl timestamps by default, but an untimestamped
+          # signature stops validating the day the certificate expires, and signtool reports that
+          # as a warning without a non-zero exit code.
+          if ($verify -notmatch 'timestamp') {
+            throw "Signature is not timestamped. Refusing to publish - it would stop validating when the certificate expires."
+          }
+
+      # ---------------- REPLACE THE ASSET AND PUBLISH ----------------
+      - name: Upload the signed binary over the unsigned asset
+        if: steps.check.outputs.needs_signing == 'true'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = '${{ steps.download.outputs.exe_path }}'
+          # --clobber replaces the asset in place, so the download URL in docs/installation.md and
+          # on the website stays correct.
+          gh release upload $env:TAG "$exe" --repo $env:GITHUB_REPOSITORY --clobber
+          if ($LASTEXITCODE -ne 0) { throw "gh release upload failed" }
+          Write-Host "Replaced asset: ${{ steps.download.outputs.exe_name }}"
+
+      - name: Publish the release
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $isDraft = gh release view $env:TAG --repo $env:GITHUB_REPOSITORY --json isDraft -q .isDraft
+          if ($LASTEXITCODE -ne 0) { throw "gh release view failed" }
+
+          # Guarded so a re-run against an already-published release is a no-op rather than an
+          # attempt to change its state.
+          if ($isDraft -eq 'true') {
+            gh release edit $env:TAG --repo $env:GITHUB_REPOSITORY --draft=false
+            if ($LASTEXITCODE -ne 0) { throw "gh release edit --draft=false failed" }
+            Write-Host "Published release $env:TAG"
+          } else {
+            Write-Host "Release $env:TAG is already published - nothing to do."
+          }
+
+      - name: Summary
+        if: always()
+        shell: pwsh
+        run: |
+          $lines = @(
+            "### Windows signing - $env:TAG",
+            "",
+            "| Field | Value |",
+            "| --- | --- |",
+            "| Asset | ``${{ steps.download.outputs.exe_name }}`` |",
+            "| Signing needed | ${{ steps.check.outputs.needs_signing }} |",
+            "| Result | ${{ job.status }} |"
+          )
+          $lines -join "`n" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
