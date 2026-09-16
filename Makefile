@@ -67,7 +67,11 @@ gh-release:
 		--title "$(TAG)" \
 		--notes-file docs/changelog.md \
 		--draft
-	@echo "==> Draft release $(TAG) created. CI is now signing the Windows binary."
+	@echo "==> Draft release $(TAG) created. Triggering Windows signing workflow..."
+	@gh workflow run sign-windows-exe.yml \
+		--repo ExabeamLabs/agent-sensor-dist \
+		--field tag=$(TAG)
+	@echo "==> Signing workflow triggered."
 	@echo "    Watch:   gh run watch --repo ExabeamLabs/agent-sensor-dist"
 	@echo "    Release: https://github.com/ExabeamLabs/agent-sensor-dist/releases/tag/$(TAG)"
 
