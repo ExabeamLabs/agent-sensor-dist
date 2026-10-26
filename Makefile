@@ -3,18 +3,20 @@
 # VERSION must be supplied on the command line, e.g. make release VERSION=1.2.3
 VERSION ?= $(error VERSION is required. Usage: make release VERSION=1.2.3)
 
-TAG     := v$(VERSION)
+TAG      = v$(VERSION)
 BIN_DIR := bin
 
-MACOS_INTEL := $(BIN_DIR)/agent-sensor-$(TAG)-x86_64-apple-darwin
-MACOS_ARM   := $(BIN_DIR)/agent-sensor-$(TAG)-aarch64-apple-darwin
-WINDOWS     := $(BIN_DIR)/agent-sensor-$(TAG)-x86_64-pc-windows-gnu.exe
+MACOS_INTEL  = $(BIN_DIR)/agent-sensor-$(TAG)-x86_64-apple-darwin
+MACOS_ARM    = $(BIN_DIR)/agent-sensor-$(TAG)-aarch64-apple-darwin
+WINDOWS      = $(BIN_DIR)/agent-sensor-$(TAG)-x86_64-pc-windows-gnu.exe
 
-BINS := $(MACOS_INTEL) $(MACOS_ARM) $(WINDOWS)
+BINS = $(MACOS_INTEL) $(MACOS_ARM) $(WINDOWS)
 
 # ── Targets ──────────────────────────────────────────────────────────────────
 
-.PHONY: help verify tag gh-release publish release
+.PHONY: help verify tag gh-release publish release serve
+
+SERVE_PORT ?= 4000
 
 help:
 	@echo ""
@@ -26,6 +28,7 @@ help:
 	@echo "    make gh-release  VERSION=x.y.z   Create DRAFT release and upload binaries"
 	@echo "    make release     VERSION=x.y.z   Full flow: verify → tag → gh-release"
 	@echo "    make publish     VERSION=x.y.z   Manually un-draft a release (escape hatch)"
+	@echo "    make serve                       Preview the GitHub Pages site at http://localhost:$(SERVE_PORT)"
 	@echo ""
 	@echo "  Before running 'make release':"
 	@echo "    1. Build binaries in the private repo and copy them to bin/ with the"
@@ -86,3 +89,8 @@ publish:
 release: verify tag gh-release
 	@echo ""
 	@echo "==> Draft release $(TAG) created and handed off to CI for signing."
+
+# Serve the GitHub Pages site (repo root) locally for review before pushing.
+serve:
+	@echo "==> Serving $(CURDIR) at http://localhost:$(SERVE_PORT)  (Ctrl+C to stop)"
+	@python3 -m http.server $(SERVE_PORT) --bind 127.0.0.1 --directory "$(CURDIR)"

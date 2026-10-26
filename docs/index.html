@@ -349,7 +349,7 @@
   .doc-breadcrumb a:hover{color:var(--green);}
   .doc-header h1{font-size:36px;margin:0 0 10px;}
   .doc-header p{color:var(--text-dim);font-size:16px;margin:0;max-width:640px;}
-  .doc-wrap{display:grid;grid-template-columns:230px 1fr;gap:56px;padding:48px 0 90px;align-items:start;}
+  .doc-wrap{display:grid;grid-template-columns:230px minmax(0,1fr);gap:56px;padding:48px 0 90px;align-items:start;}
   .doc-sidebar{position:sticky;top:96px;}
   .doc-sidebar .side-label{font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-mute);margin-bottom:14px;}
   .doc-sidebar a{display:block;padding:7px 0;font-size:14px;font-weight:600;color:var(--text-dim);border-left:2px solid transparent;padding-left:14px;margin-left:-15px;}
@@ -374,10 +374,13 @@
   .prose a{color:var(--blue-soft);}
   .doc-card-row{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:8px;}
   @media (max-width:920px){
-    .doc-wrap{grid-template-columns:1fr;}
+    .doc-wrap{grid-template-columns:minmax(0,1fr);}
     .doc-sidebar{position:static;}
     .doc-card-row{grid-template-columns:1fr;}
   }
+  /* Phone width: the header CTA does not fit next to the brand; downloads stay reachable on the page */
+  @media (max-width:640px){ header .btn-primary{display:none;} .prose table{display:block;overflow-x:auto;} }
+  .two-col > *{min-width:0;}
 </style>
 </head>
 <body>

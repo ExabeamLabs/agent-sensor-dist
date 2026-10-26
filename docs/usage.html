@@ -349,7 +349,7 @@
   .doc-breadcrumb a:hover{color:var(--green);}
   .doc-header h1{font-size:36px;margin:0 0 10px;}
   .doc-header p{color:var(--text-dim);font-size:16px;margin:0;max-width:640px;}
-  .doc-wrap{display:grid;grid-template-columns:230px 1fr;gap:56px;padding:48px 0 90px;align-items:start;}
+  .doc-wrap{display:grid;grid-template-columns:230px minmax(0,1fr);gap:56px;padding:48px 0 90px;align-items:start;}
   .doc-sidebar{position:sticky;top:96px;}
   .doc-sidebar .side-label{font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-mute);margin-bottom:14px;}
   .doc-sidebar a{display:block;padding:7px 0;font-size:14px;font-weight:600;color:var(--text-dim);border-left:2px solid transparent;padding-left:14px;margin-left:-15px;}
@@ -374,10 +374,13 @@
   .prose a{color:var(--blue-soft);}
   .doc-card-row{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:8px;}
   @media (max-width:920px){
-    .doc-wrap{grid-template-columns:1fr;}
+    .doc-wrap{grid-template-columns:minmax(0,1fr);}
     .doc-sidebar{position:static;}
     .doc-card-row{grid-template-columns:1fr;}
   }
+  /* Phone width: the header CTA does not fit next to the brand; downloads stay reachable on the page */
+  @media (max-width:640px){ header .btn-primary{display:none;} .prose table{display:block;overflow-x:auto;} }
+  .two-col > *{min-width:0;}
 </style>
 </head>
 <body>
@@ -422,7 +425,7 @@
       <div class="prose" style="margin-top:8px;">
 
         <h2 style="border-top:none;padding-top:0;margin-top:0;">Overview</h2>
-        <p><code>agent-sensor</code> is an endpoint collector for Agent Behavior Analytics. It captures events from AI CLI tools (Claude Code, Codex CLI, Gemini CLI) and forwards them — normalized to Exabeam CIM — to a local JSONL audit log and/or a SIEM webhook.</p>
+        <p><code>agent-sensor</code> is an endpoint collector for Agent Behavior Analytics. It captures events from AI CLI tools (Claude Code, Codex CLI, Gemini CLI), Antigravity, and the OpenClaw gateway, and forwards them — normalized to Exabeam CIM — to a local JSONL audit log and/or a SIEM webhook.</p>
 
         <h2>Synopsis</h2>
         <pre><code>agent-sensor [OPTIONS] [SUBCOMMAND]</code></pre>
@@ -433,11 +436,12 @@
           <tr><th>Flag</th><th>Default</th><th>Description</th></tr>
           <tr><td><code>-c, --config &lt;PATH&gt;</code></td><td>~/.agent-sensor/config.toml</td><td>Path to config file</td></tr>
           <tr><td><code>--log-level &lt;LEVEL&gt;</code></td><td>info</td><td>Log verbosity: error, warn, info, debug, trace</td></tr>
-          <tr><td><code>--hook-port &lt;PORT&gt;</code></td><td>0 (OS-assigned)</td><td>Port for the hook server. All three CLI paths (/claude, /codex, /gemini) are served on this port. Use 4982 for a stable well-known port.</td></tr>
+          <tr><td><code>--hook-port &lt;PORT&gt;</code></td><td>4982</td><td>Port for the hook server. All three CLI paths (/claude, /codex, /gemini) are served on this port. --auto-config bakes this port into the hook wrappers. Passing 0 is meant to request an OS-assigned port, but in 1.0.5 it still binds 4982 — pass an explicit free port instead.</td></tr>
           <tr><td><code>--port-range &lt;MIN-MAX&gt;</code></td><td>(none)</td><td>Constrain all hook port binds to this range, e.g. 10000-11000. Ephemeral ports outside the range exit with code 3; explicit ports outside the range exit with code 78.</td></tr>
-          <tr><td><code>--auto-config</code></td><td>—</td><td>Install hooks for Claude Code, Codex CLI, and Gemini CLI, and write a default config.toml (never overwrites an existing one).</td></tr>
+          <tr><td><code>--auto-config</code></td><td>—</td><td>Install hooks for Claude Code, Codex CLI, and Gemini CLI, and write a default config.toml (never overwrites an existing one). Adds an [openclaw] block when ~/.openclaw/openclaw.json exists.</td></tr>
+          <tr><td><code>--capture-content</code></td><td>—</td><td>With --auto-config: forward prompt and response text instead of [REDACTED:*]. Writes censor_request/censor_response = false into the generated config; no effect if config.toml already exists.</td></tr>
           <tr><td><code>--dry-run</code></td><td>—</td><td>Preview changes for --auto-config or --enable-local-encryption without modifying any files.</td></tr>
-          <tr><td><code>--enable-local-encryption</code></td><td>—</td><td>Encrypt JSONL and SQLite files at rest. Requires AGENT_SENSOR_KEY env var.</td></tr>
+          <tr><td><code>--enable-local-encryption</code></td><td>—</td><td>Encrypt the JSONL sink and the DLQ at rest. Requires the env var named by [encryption] key_env_var (default AGENT_SENSOR_KEY). The SQLite sink is <strong>not</strong> encrypted.</td></tr>
           <tr><td><code>--project-dir &lt;PATH&gt;</code></td><td>~/.agent-sensor</td><td>Project directory for registry lookup (useful when running multiple instances).</td></tr>
         </table>
         <blockquote><strong>Security note:</strong> Never pass bearer tokens as CLI flags — they appear in <code>ps aux</code>. Use <code>--token-file &lt;path&gt;</code> or the <code>AGENT_SENSOR_WEBHOOK_TOKEN</code> env var instead.</blockquote>
@@ -474,10 +478,11 @@ agent-sensor check-config /path/to/custom-config.toml</code></pre>
 agent-sensor install-service
 
 # Windows — scheduled task (no admin required)
-agent-sensor install-service --use-scheduled-task</code></pre>
+agent-sensor install-service</code></pre>
         <table>
           <tr><th>Flag</th><th>Description</th></tr>
-          <tr><td><code>--use-scheduled-task</code></td><td>Install as a Windows ONLOGON scheduled task instead of a Windows Service. Ignored on macOS.</td></tr>
+          <tr><td><code>--use-windows-service</code></td><td>Windows only: install a Windows Service (SCM) instead of the default ONLOGON scheduled task. Requires administrator rights and runs as LocalSystem, which usually cannot read your agent CLIs' files — avoid unless you have a specific reason. Ignored on macOS.</td></tr>
+          <tr><td><code>--use-scheduled-task</code></td><td>Deprecated no-op — the scheduled task is now the Windows default. Still accepted so existing deployment scripts keep working.</td></tr>
           <tr><td><code>--hook-port &lt;PORT&gt;</code></td><td>Port to embed in the service manifest. Default port is 4982</td></tr>
           <tr><td><code>--port-range &lt;MIN-MAX&gt;</code></td><td>Port range constraint to embed in the service manifest.</td></tr>
           <tr><td><code>--project-dir &lt;PATH&gt;</code></td><td>Sets AGENT_SENSOR_PROJECT_DIR in the service environment.</td></tr>
@@ -513,7 +518,12 @@ agent-sensor replay-dlq --sink my-webhook</code></pre>
 
         <h3>detect-sources</h3>
         <p>Print available and all known source slugs as JSON. Used by the installer wizard.</p>
-        <pre><code>agent-sensor detect-sources</code></pre>
+        <pre><code>agent-sensor detect-sources
+# {"all":["claude-code-cli","claude-desktop","antigravity","openclaw-ws"],"available":[...]}</code></pre>
+
+        <h3>decrypt-events &lt;PATH&gt;</h3>
+        <p>Decrypt a file written with <code>--enable-local-encryption</code> and print it to stdout. <code>replay-dlq</code> decrypts automatically.</p>
+        <pre><code>agent-sensor decrypt-events ~/.agent-sensor/events.jsonl &gt; events.decrypted.jsonl</code></pre>
 
         <h3>update</h3>
         <p>Check for or apply a pending update (requires <code>[update] enabled = true</code> in config).</p>
@@ -533,12 +543,12 @@ agent-sensor install-service</code></pre>
         <h3>Preview hook installation without applying</h3>
         <pre><code>agent-sensor --auto-config --dry-run</code></pre>
 
-        <h3>Forward events to Exabeam</h3>
+        <h3 id="forward-events-to-exabeam">Forward events to Exabeam</h3>
         <p>Edit <code>~/.agent-sensor/config.toml</code>:</p>
         <pre><code>[[sinks]]
 kind = "webhook"
 url = "https://your-exabeam-collector.example.com/agent-sensor"
-token_file = "~/.agent-sensor/webhook.token"</code></pre>
+token_file = "/Users/you/.agent-sensor/webhook.token"   # absolute path — ~ is not expanded</code></pre>
         <p>Save the webhook bearer token:</p>
         <pre><code>echo -n "YOUR_TOKEN" > ~/.agent-sensor/webhook.token
 chmod 600 ~/.agent-sensor/webhook.token</code></pre>
@@ -556,9 +566,247 @@ agent-sensor metrics | grep agent_sensor_hook_events_received_total
 
 # Filter by source
 jq 'select(.framework=="claude_code")' ~/.agent-sensor/events.jsonl
+jq 'select(.framework=="openclaw")' ~/.agent-sensor/events.jsonl
 
 # Session starts only
-jq 'select(.event_type=="session_start") | {ts, session_id, framework}' ~/.agent-sensor/events.jsonl</code></pre>
+jq 'select(.type=="session_start") | {ts, session, framework}' ~/.agent-sensor/events.jsonl
+
+# Prompts flagged for injection
+jq 'select(.has_injection==true)
+    | {ts, session, injection_patterns, triggered_rules, max_severity}' ~/.agent-sensor/events.jsonl</code></pre>
+        <p>If local encryption is enabled, decrypt first: <code>agent-sensor decrypt-events ~/.agent-sensor/events.jsonl | jq …</code>.</p>
+
+        <h3>Event format</h3>
+        <p>Each line of the JSONL sink is one event, schema <code>observra:1.1</code>. Common top-level fields:</p>
+        <table>
+        <tr>
+        <th>Field</th>
+        <th>Description</th>
+        </tr>
+        <tr>
+        <td><code>ts</code></td>
+        <td>Event timestamp (RFC 3339, UTC)</td>
+        </tr>
+        <tr>
+        <td><code>type</code></td>
+        <td><code>session_start</code>, <code>session_end</code>, <code>user</code>, <code>turn</code>, <code>turn_duration</code>, <code>tool_start</code>, <code>tool_end</code>, <code>tool_error</code>, <code>agent_end</code>, <code>forwarder_started</code></td>
+        </tr>
+        <tr>
+        <td><code>session</code></td>
+        <td>Short session identifier. The full identifier is in <code>data.session_key</code>.</td>
+        </tr>
+        <tr>
+        <td><code>framework</code> / <code>agent</code></td>
+        <td>Source, e.g. <code>claude_code</code>, <code>openclaw</code>, or <code>agent_sensor</code> for the agent-sensor's own events</td>
+        </tr>
+        <tr>
+        <td><code>text</code></td>
+        <td>Prompt or response text — <code>[REDACTED:*]</code> unless content capture is on</td>
+        </tr>
+        <tr>
+        <td><code>has_injection</code>, <code>injection_patterns</code>, <code>triggered_rules</code>, <code>max_severity</code></td>
+        <td>Detection results, present when a rule fired</td>
+        </tr>
+        <tr>
+        <td><code>host</code>, <code>user</code>, <code>os</code>, <code>arch</code>, <code>forwarder</code>, <code>schema</code></td>
+        <td>Endpoint and agent-sensor metadata</td>
+        </tr>
+        <tr>
+        <td><code>data</code></td>
+        <td>Source-specific detail, e.g. <code>action</code>, <code>session_key</code>, <code>vendor</code></td>
+        </tr>
+        </table>
+        <blockquote><p><strong>Note:</strong> For OpenClaw, <code>session</code> is the first 8 characters of a key such as <code>agent:main:main</code>, so different sessions of the same agent share a <code>session</code> value. Use <code>data.session_key</code> to tell OpenClaw sessions apart.</p>
+        </blockquote>
+        <h2>Configuration Reference</h2>
+        <p><code>~/.agent-sensor/config.toml</code> is generated by <code>--auto-config</code> and never overwritten afterwards. The TOML loader does <strong>not</strong> expand <code>~</code> — use absolute paths. Restart the agent-sensor after every change, and run <code>agent-sensor check-config</code> first (it does not catch every runtime error: a webhook sink without a token, for example, passes <code>check-config</code> but exits with code 78 on start).</p>
+        <h3><code>[sources]</code></h3>
+        <p>Sources are detected automatically — <code>[sources]</code> takes no keys. Run <code>agent-sensor detect-sources</code> to see what was found.</p>
+        <table>
+        <tr>
+        <th>Source slug</th>
+        <th>Detected when</th>
+        </tr>
+        <tr>
+        <td><code>claude-code-cli</code></td>
+        <td>Claude Code is installed</td>
+        </tr>
+        <tr>
+        <td><code>claude-desktop</code></td>
+        <td>Claude Desktop is installed</td>
+        </tr>
+        <tr>
+        <td><code>antigravity</code></td>
+        <td><code>~/.gemini/antigravity-cli</code> exists</td>
+        </tr>
+        <tr>
+        <td><code>openclaw-ws</code></td>
+        <td><code>[openclaw]</code> is configured (see below)</td>
+        </tr>
+        </table>
+        <p>Codex CLI and Gemini CLI events arrive through the hook server (<code>/codex</code>, <code>/gemini</code>) rather than a source.</p>
+        <h3><code>[[sinks]]</code></h3>
+        <p>Each <code>[[sinks]]</code> table is one destination. Every event is sent to every sink.</p>
+        <table>
+        <tr>
+        <th>Key</th>
+        <th>Applies to</th>
+        <th>Description</th>
+        </tr>
+        <tr>
+        <td><code>kind</code></td>
+        <td>all</td>
+        <td><code>jsonl</code>, <code>sqlite</code>, <code>webhook</code>, or <code>chroma</code></td>
+        </tr>
+        <tr>
+        <td><code>name</code></td>
+        <td>all</td>
+        <td>Sink name, used by <code>replay-dlq --sink &lt;NAME&gt;</code> and in logs</td>
+        </tr>
+        <tr>
+        <td><code>channel_capacity</code></td>
+        <td>all</td>
+        <td>In-memory queue size for the sink</td>
+        </tr>
+        <tr>
+        <td><code>path</code></td>
+        <td><code>jsonl</code>, <code>sqlite</code></td>
+        <td>Absolute file path</td>
+        </tr>
+        <tr>
+        <td><code>rotation_size_mb</code>, <code>max_rotated_files</code></td>
+        <td><code>jsonl</code></td>
+        <td>Rotation (defaults <code>100</code> and <code>5</code>)</td>
+        </tr>
+        <tr>
+        <td><code>url</code></td>
+        <td><code>webhook</code>, <code>chroma</code></td>
+        <td>Destination URL</td>
+        </tr>
+        <tr>
+        <td><code>token_file</code></td>
+        <td><code>webhook</code></td>
+        <td>File containing the bearer token (or set <code>AGENT_SENSOR_WEBHOOK_TOKEN</code>). Required.</td>
+        </tr>
+        <tr>
+        <td><code>max_attempts</code>, <code>base_delay_ms</code>, <code>max_delay_ms</code></td>
+        <td><code>webhook</code></td>
+        <td>Retry policy (defaults <code>6</code>, <code>1000</code>, <code>30000</code>). After the last attempt, the event is written to <code>dlq.jsonl</code>.</td>
+        </tr>
+        <tr>
+        <td><code>chroma_collection</code></td>
+        <td><code>chroma</code></td>
+        <td>Collection name (created if missing)</td>
+        </tr>
+        <tr>
+        <td><code>chroma_api_version</code></td>
+        <td><code>chroma</code></td>
+        <td>Chroma HTTP API version. <strong>Set <code>"v2"</code> for Chroma 1.x</strong> — the default fails with HTTP 405 and those events are not saved to the DLQ.</td>
+        </tr>
+        </table>
+        <p><strong>JSONL</strong> (default):</p>
+        <pre><code>[[sinks]]
+        kind = &quot;jsonl&quot;
+        path = &quot;/Users/you/.agent-sensor/events.jsonl&quot;
+        rotation_size_mb = 100
+        max_rotated_files = 5
+        </code></pre>
+        <p><strong>SQLite</strong> — one row per event in table <code>events</code> (WAL mode). Not encrypted by <code>--enable-local-encryption</code>. In 1.0.5 the <code>prompt</code> column is not populated; read prompt text from the JSONL sink.</p>
+        <pre><code>[[sinks]]
+        kind = &quot;sqlite&quot;
+        name = &quot;local-db&quot;
+        path = &quot;/Users/you/.agent-sensor/events.db&quot;
+        </code></pre>
+        <p><strong>Webhook</strong> — see <a href="#forward-events-to-exabeam">Forward events to Exabeam</a>.</p>
+        <p><strong>Chroma</strong> — each event is stored as a document in a Chroma collection, for semantic search over agent activity.</p>
+        <pre><code>[[sinks]]
+        kind = &quot;chroma&quot;
+        name = &quot;chroma&quot;
+        url = &quot;http://localhost:8000&quot;
+        chroma_collection = &quot;agent_sensor_events&quot;
+        chroma_api_version = &quot;v2&quot;
+        </code></pre>
+        <h3><code>[redaction]</code></h3>
+        <p>Prompt and response text is replaced with <code>[REDACTED:*]</code> before events leave the host. Redaction runs <strong>after</strong> detection, so injection scanning and SIEM rules see the full text either way. Built-in patterns (AWS keys, bearer tokens, JWTs, API keys, passwords, emails, IPs) are always removed.</p>
+        <table>
+        <tr>
+        <th>Key</th>
+        <th>Default</th>
+        <th>Description</th>
+        </tr>
+        <tr>
+        <td><code>censor_request</code></td>
+        <td><code>true</code></td>
+        <td>Redact prompt text. <code>--auto-config --capture-content</code> writes <code>false</code>.</td>
+        </tr>
+        <tr>
+        <td><code>censor_response</code></td>
+        <td><code>true</code></td>
+        <td>Redact model output. <code>--auto-config --capture-content</code> writes <code>false</code>.</td>
+        </tr>
+        <tr>
+        <td><code>max_request_chars</code></td>
+        <td><code>256</code></td>
+        <td>Maximum prompt excerpt length when not censored (<code>0</code> = unlimited)</td>
+        </tr>
+        <tr>
+        <td><code>max_response_chars</code></td>
+        <td><code>256</code></td>
+        <td>Maximum response excerpt length when not censored (<code>0</code> = unlimited)</td>
+        </tr>
+        </table>
+        <h3><code>[encryption]</code></h3>
+        <table>
+        <tr>
+        <th>Key</th>
+        <th>Default</th>
+        <th>Description</th>
+        </tr>
+        <tr>
+        <td><code>enabled</code></td>
+        <td><code>false</code></td>
+        <td>Encrypt the JSONL sink and <code>dlq.jsonl</code> at rest (same as <code>--enable-local-encryption</code>)</td>
+        </tr>
+        <tr>
+        <td><code>key_env_var</code></td>
+        <td><code>AGENT_SENSOR_KEY</code></td>
+        <td>Environment variable holding the key</td>
+        </tr>
+        </table>
+        <p>Read encrypted files with <code>agent-sensor decrypt-events &lt;PATH&gt;</code>.</p>
+        <h3><code>[openclaw]</code></h3>
+        <table>
+        <tr>
+        <th>Key</th>
+        <th>Description</th>
+        </tr>
+        <tr>
+        <td><code>enabled</code></td>
+        <td><code>true</code> to connect to the OpenClaw gateway</td>
+        </tr>
+        <tr>
+        <td><code>host</code>, <code>port</code></td>
+        <td>Gateway address, taken from <code>~/.openclaw/openclaw.json</code> by <code>--auto-config</code></td>
+        </tr>
+        <tr>
+        <td><code>token_file</code> / <code>token</code></td>
+        <td>Optional. Overrides the gateway token read from <code>~/.openclaw/openclaw.json</code> (<code>gateway.auth.token</code>).</td>
+        </tr>
+        </table>
+        <p>The token is read when the agent-sensor starts — restart it after rotating the gateway token. See <a href="installation.html#openclaw">Installation → OpenClaw</a>.</p>
+        <h3><code>[dedup]</code></h3>
+        <p>Agent CLIs can fire both global and project-level hooks for one action. Dedup drops a payload already seen within the window. Enabled by default; distinct tool calls (unique <code>tool_use_id</code>) are never merged.</p>
+        <pre><code>[dedup]
+        enabled = true
+        window_ms = 2000
+        </code></pre>
+        <h3><code>[reconcile]</code></h3>
+        <p>Off by default. When enabled, a long-running agent-sensor periodically detects agent CLIs installed after setup and installs their hooks (user scope only; already-configured CLIs are skipped).</p>
+        <pre><code>[reconcile]
+        enabled = true
+        interval_secs = 300
+        </code></pre>
+
 
         <h2>Exit Codes</h2>
         <table>
@@ -573,7 +821,7 @@ jq 'select(.event_type=="session_start") | {ts, session_id, framework}' ~/.agent
         <table>
           <tr><th>Variable</th><th>Description</th></tr>
           <tr><td><code>RUST_LOG</code></td><td>Log filter, e.g. RUST_LOG=agent_sensor=debug</td></tr>
-          <tr><td><code>AGENT_SENSOR_KEY</code></td><td>Encryption key for --enable-local-encryption</td></tr>
+          <tr><td><code>AGENT_SENSOR_KEY</code></td><td>Encryption key for --enable-local-encryption (name configurable via [encryption] key_env_var)</td></tr>
           <tr><td><code>AGENT_SENSOR_WEBHOOK_TOKEN</code></td><td>Bearer token for webhook sink (alternative to token_file in config)</td></tr>
           <tr><td><code>AGENT_SENSOR_PROJECT_DIR</code></td><td>Project directory (same as --project-dir flag)</td></tr>
         </table>

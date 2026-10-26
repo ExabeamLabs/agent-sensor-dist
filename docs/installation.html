@@ -349,7 +349,7 @@
   .doc-breadcrumb a:hover{color:var(--green);}
   .doc-header h1{font-size:36px;margin:0 0 10px;}
   .doc-header p{color:var(--text-dim);font-size:16px;margin:0;max-width:640px;}
-  .doc-wrap{display:grid;grid-template-columns:230px 1fr;gap:56px;padding:48px 0 90px;align-items:start;}
+  .doc-wrap{display:grid;grid-template-columns:230px minmax(0,1fr);gap:56px;padding:48px 0 90px;align-items:start;}
   .doc-sidebar{position:sticky;top:96px;}
   .doc-sidebar .side-label{font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-mute);margin-bottom:14px;}
   .doc-sidebar a{display:block;padding:7px 0;font-size:14px;font-weight:600;color:var(--text-dim);border-left:2px solid transparent;padding-left:14px;margin-left:-15px;}
@@ -374,10 +374,13 @@
   .prose a{color:var(--blue-soft);}
   .doc-card-row{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:8px;}
   @media (max-width:920px){
-    .doc-wrap{grid-template-columns:1fr;}
+    .doc-wrap{grid-template-columns:minmax(0,1fr);}
     .doc-sidebar{position:static;}
     .doc-card-row{grid-template-columns:1fr;}
   }
+  /* Phone width: the header CTA does not fit next to the brand; downloads stay reachable on the page */
+  @media (max-width:640px){ header .btn-primary{display:none;} .prose table{display:block;overflow-x:auto;} }
+  .two-col > *{min-width:0;}
 </style>
 </head>
 <body>
@@ -439,15 +442,22 @@
           <tr><td>Windows x86_64</td><td><code>agent-sensor-v{VERSION}-x86_64-pc-windows-gnu.exe</code></td></tr>
         </table>
 
-        <h2>macOS</h2>
-        <p>Replace <code>VERSION</code> with the release you want (e.g. <code>1.0.4</code>).</p>
+        <h2>macOS (Homebrew)</h2>
+        <pre><code>brew tap ExabeamLabs/agent-sensor https://github.com/ExabeamLabs/agent-sensor-dist
+brew trust exabeamlabs/agent-sensor
+brew install agent-sensor</code></pre>
+        <p>Homebrew 7 refuses to load formulae from a third-party tap until you trust it — without <code>brew trust</code>, <code>brew install</code> fails with <em>Refusing to load formula … from untrusted tap</em>. The formula currently installs <strong>1.0.4</strong>; use the manual install below for 1.0.5.</p>
+        <p>This repo isn't named <code>homebrew-*</code>, so the full tap URL above is required. Upgrade with <code>brew upgrade agent-sensor</code>; <code>brew uninstall agent-sensor</code> removes only the binary (see <a href="#uninstall">Uninstall</a> for config and hooks).</p>
+
+        <h2>macOS (manual)</h2>
+        <p>Replace <code>VERSION</code> with the release you want (e.g. <code>1.0.5</code>).</p>
         <p><strong>Apple Silicon (M1/M2/M3):</strong></p>
-        <pre><code>VERSION=1.0.4
+        <pre><code>VERSION=1.0.5
 sudo curl -fsSL https://github.com/ExabeamLabs/agent-sensor-dist/releases/download/v${VERSION}/agent-sensor-v${VERSION}-aarch64-apple-darwin \
   -o /usr/local/bin/agent-sensor
 sudo chmod +x /usr/local/bin/agent-sensor</code></pre>
         <p><strong>Intel:</strong></p>
-        <pre><code>VERSION=1.0.4
+        <pre><code>VERSION=1.0.5
 sudo curl -fsSL https://github.com/ExabeamLabs/agent-sensor-dist/releases/download/v${VERSION}/agent-sensor-v${VERSION}-x86_64-apple-darwin \
   -o /usr/local/bin/agent-sensor
 sudo chmod +x /usr/local/bin/agent-sensor</code></pre>
@@ -469,6 +479,9 @@ agent-sensor --version</code></pre>
         </ol>
         <p>Verify in PowerShell:</p>
         <pre><code>agent-sensor --version</code></pre>
+        <p>From 1.0.5 the Windows binary is Authenticode-signed by Exabeam (DigiCert). Confirm the signature before running it:</p>
+        <pre><code>Get-AuthenticodeSignature .\agent-sensor.exe | Format-List Status, SignerCertificate
+# Status should be "Valid"; the signer is CN="EXABEAM, LLC" (issued by DigiCert)</code></pre>
 
         <h2>Configuration</h2>
         <blockquote>
@@ -479,7 +492,23 @@ agent-sensor --auto-config --dry-run
 
 # Apply
 agent-sensor --auto-config</code></pre>
-        <p>This installs hooks for Claude Code, Codex CLI, and Gemini CLI at <code>~/.claude</code>, <code>~/.codex</code>, and <code>~/.gemini</code>. It also creates the default config file at <code>~/.agent-sensor/config.toml</code>. Restart the agent-sensor to pick up the new hook configurations.</p>
+        <blockquote>
+          <p><strong>Note:</strong> Run <code>--auto-config</code> from your home directory (<code>cd ~</code> first). Besides the user-level hooks, it also registers project-level hooks in the <strong>current directory</strong> (<code>./.claude/settings.json</code>, <code>./.codex/hooks.json</code>, <code>./.gemini/settings.json</code>). Run inside a code repository, these show up as untracked files.</p>
+        </blockquote>
+        <p>This installs hooks for Claude Code, Codex CLI, and Gemini CLI at <code>~/.claude</code>, <code>~/.codex</code>, and <code>~/.gemini</code>, sets <code>features.hooks = true</code> in <code>~/.codex/config.toml</code>, generates the hook server secret <code>~/.agent-sensor/hook.secret</code>, and creates the default config file at <code>~/.agent-sensor/config.toml</code>. Restart the agent-sensor and any running Claude Code, Codex, or Gemini sessions to pick up the new hook configurations.</p>
+        <p>By default, prompts and model output are replaced with <code>[REDACTED:*]</code> before events leave the host. To forward the text, add <code>--capture-content</code> the first time you run <code>--auto-config</code>. It has no effect if <code>config.toml</code> already exists; in that case set <code>censor_request = false</code> and <code>censor_response = false</code> in the config yourself. Injection scanning and detection rules see the full text either way.</p>
+
+        <h3 id="openclaw">OpenClaw</h3>
+        <p>If OpenClaw is installed (<code>~/.openclaw/openclaw.json</code> exists), <code>--auto-config</code> adds an <code>[openclaw]</code> block to <code>~/.agent-sensor/config.toml</code>. The agent-sensor connects to the OpenClaw gateway over WebSocket and forwards live agent activity through the same sinks as the CLI hooks.</p>
+        <pre><code>[openclaw]
+enabled = true
+host  = "&lt;gateway host from openclaw.json&gt;"
+port  = &lt;gateway port from openclaw.json&gt;</code></pre>
+        <p>The gateway auth token is <strong>not</strong> copied into <code>config.toml</code>. The agent-sensor reads <code>gateway.auth.token</code> from <code>~/.openclaw/openclaw.json</code> when it starts. <strong>Restart the agent-sensor after rotating the OpenClaw gateway token</strong> — until you do, it keeps reconnecting with the old token and the gateway rejects it. Set <code>token_file</code> (or <code>token</code>) in <code>[openclaw]</code> only to use a different credential than OpenClaw's own.</p>
+        <p>If OpenClaw is installed after you ran <code>--auto-config</code>, the existing <code>config.toml</code> is not overwritten. Add the <code>[openclaw]</code> block by hand, or move the config aside and re-run <code>--auto-config</code>.</p>
+        <p>Confirm the source is detected:</p>
+        <pre><code>agent-sensor detect-sources
+# {"all":[...,"openclaw-ws"],"available":[...,"openclaw-ws"]}</code></pre>
 
         <h3>Configure Sinks</h3>
         <p>A <strong>JSONL</strong> sink is configured automatically with <code>--auto-config</code>. The JSONL sink stores the agent telemetry in a local file.</p>
@@ -498,7 +527,7 @@ path = "{HOME}/.agent-sensor/events.jsonl"
 rotation_size_mb = 100
 max_rotated_files = 5
 
-# Uncomment to forward events to Exabeam or another SIEM:
+# Add to forward events to Exabeam or another SIEM:
 [[sinks]]
 kind = "webhook"
 url = "{EXABEAM_WEBHOOK}"
@@ -509,7 +538,8 @@ token_file = "{HOME}/.agent-sensor/webhook.token"</code></pre>
         <h3>macOS (launchd)</h3>
         <pre><code>agent-sensor install-service</code></pre>
         <h3>Windows (scheduled task — no admin required)</h3>
-        <pre><code>agent-sensor install-service --use-scheduled-task</code></pre>
+        <pre><code>agent-sensor install-service</code></pre>
+        <p>On Windows, <code>install-service</code> registers an ONLOGON scheduled task that runs as you — no administrator rights needed. The older <code>--use-scheduled-task</code> flag is still accepted but does nothing. <code>--use-windows-service</code> installs a Windows Service instead; it needs administrator rights and runs as LocalSystem, which usually cannot see your agent CLIs' files, so avoid it unless you have a specific reason.</p>
 
         <h2 id="verify-installation">Verify Installation</h2>
         <pre><code># Check version
@@ -520,13 +550,15 @@ agent-sensor status
 # Service com.agent-sensor.forwarder: running
 # Current version: 1.0.4
 
-# Send a test event to the hook server
+# Send a test event (the hook server requires the secret that --auto-config generated)
 curl -X POST http://127.0.0.1:4982/claude \
   -H "Content-Type: application/json" \
-  -d '{"hook":"SessionStart","sessionId":"test"}'
+  -H "X-Agent-Sensor-Token: $(cat ~/.agent-sensor/hook.secret)" \
+  -d '{"hook_event_name":"SessionStart","session_id":"agent-sensor-install-test","source":"startup","cwd":"/tmp"}'
 
-# Confirm the event was received (counter should be non-zero)
-agent-sensor metrics | grep agent_sensor_hook_events_received_total</code></pre>
+# Confirm it was received and recorded
+agent-sensor metrics | grep agent_sensor_hook_events_received_total   # claude_code counter is non-zero
+grep agent-sensor-install-test ~/.agent-sensor/events.jsonl            # one session_start event</code></pre>
 
         <h2>Upgrading</h2>
         <p>Repeat the download and install steps with the new version. The new binary replaces the old one at the same path. If the service is running, uninstall agent-sensor before saving the new binary.</p>
@@ -543,7 +575,7 @@ agent-sensor install-service</code></pre>
 agent-sensor uninstall-service
 
 # After upgrade, start the service
-agent-sensor install-service --use-scheduled-task</code></pre>
+agent-sensor install-service</code></pre>
 
         <h2>Restarting</h2>
         <p>The agent-sensor needs to be restarted after any configuration changes to the hook configs or agent-sensor config.</p>
@@ -551,15 +583,20 @@ agent-sensor install-service --use-scheduled-task</code></pre>
 agent-sensor uninstall-service &amp;&amp; agent-sensor install-service</code></pre>
         <pre><code># Windows
 agent-sensor uninstall-service
-agent-sensor install-service --use-scheduled-task</code></pre>
+agent-sensor install-service</code></pre>
 
         <h2>Uninstall</h2>
         <h3>macOS</h3>
         <pre><code>agent-sensor uninstall-service        # Remove launchd service (if installed)
 sudo rm /usr/local/bin/agent-sensor   # Remove binary
 rm -rf ~/.agent-sensor/               # Remove config and logs (optional)</code></pre>
-        <p>To also remove the CLI hook registrations:</p>
-        <pre><code>rm -rf ~/.claude ~/.codex ~/.gemini</code></pre>
+        <p>To also remove the CLI hook registrations, delete only agent-sensor's hook entries and wrapper scripts. <strong>Do not delete <code>~/.claude</code>, <code>~/.codex</code>, or <code>~/.gemini</code></strong> — they hold each CLI's own settings, history, and projects.</p>
+        <pre><code>F='.hooks |= (with_entries(.value |= (map(.hooks |= map(select(.command | test("claude-watch-hook|codex-hook|gemini-hook") | not))) | map(select(.hooks | length &gt; 0)))) | with_entries(select(.value | length &gt; 0))) | if .hooks == {} then del(.hooks) else . end'
+for f in ~/.claude/settings.json ~/.codex/hooks.json ~/.gemini/settings.json; do
+  [ -f "$f" ] &amp;&amp; cp "$f" "$f.bak" &amp;&amp; jq "$F" "$f.bak" &gt; "$f"
+done
+rm -f ~/.claude/hooks/claude-watch-hook.sh ~/.codex/hooks/codex-hook.sh ~/.gemini/hooks/gemini-hook.sh</code></pre>
+        <p>Each edited file is backed up to <code>*.bak</code> first. <code>jq</code> ships with macOS 15 and later (otherwise <code>brew install jq</code>). Also remove project-level copies (<code>.claude/settings.json</code>, <code>.codex/hooks.json</code>, <code>.gemini/settings.json</code>) in any directory where you ran <code>--auto-config</code>, and, if you use no other Codex hooks, the <code>features.hooks = true</code> line in <code>~/.codex/config.toml</code>.</p>
         <h3>Windows</h3>
         <pre><code>agent-sensor uninstall-service   # Remove scheduled task (if installed)
 # Then delete agent-sensor.exe from its directory on your PATH</code></pre>
@@ -573,16 +610,25 @@ rm -rf ~/.agent-sensor/               # Remove config and logs (optional)</code>
         <p>Fix: delete the file and re-download.</p>
 
         <h3>Port already in use</h3>
-        <pre><code>Error: Address already in use (os error 48)</code></pre>
+        <pre><code>error: cannot bind hook server to 127.0.0.1:4982: Address already in use (os error 48)</code></pre>
         <pre><code>lsof -i :4982          # Find what is using the port
 agent-sensor --hook-port 4992   # Or use a different port</code></pre>
 
         <h3>No events appearing</h3>
         <ol>
           <li>Verify the agent-sensor is running: <code>lsof -i :4982</code></li>
-          <li>Check hooks are installed: <code>grep hook-server ~/.claude/settings.json</code></li>
+          <li>Check hooks are installed: <code>grep claude-watch-hook ~/.claude/settings.json</code> (should print one line per hooked event)</li>
           <li>Send a test event manually (see <a href="#verify-installation">Verify Installation</a> above)</li>
         </ol>
+
+        <h3>No OpenClaw events</h3>
+        <p>The agent-sensor log (<code>~/.agent-sensor/forwarder.log</code>) reports why the gateway connection failed:</p>
+        <ul>
+          <li><code>No OpenClaw token</code> — <code>~/.openclaw/openclaw.json</code> has no <code>gateway.auth.token</code>, and no <code>token</code>/<code>token_file</code> is set in <code>[openclaw]</code>.</li>
+          <li><code>OpenClaw WS connect failed</code> — the gateway is not running, or <code>host</code>/<code>port</code> in <code>[openclaw]</code> don't match it.</li>
+          <li><code>OpenClaw connect rejected</code> (<code>AUTH_TOKEN_MISMATCH</code>) — the gateway refused the token. If the gateway token was rotated, restart the agent-sensor.</li>
+        </ul>
+        <p>If the token is missing at startup, the OpenClaw source is not started at all (<code>source not started</code>); add the token and restart the agent-sensor.</p>
 
         <h3>macOS Gatekeeper blocks the binary</h3>
         <p>macOS may show a security warning the first time you run an unsigned binary. Right-click the binary in Finder, choose <strong>Open</strong>, and confirm when prompted — or run:</p>
