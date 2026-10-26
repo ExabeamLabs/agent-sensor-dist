@@ -1,6 +1,6 @@
 # Usage — agent-sensor
 
-`agent-sensor` is an endpoint collector for Agent Behavior Analytics. It captures events from AI CLI tools (Claude Code, Codex CLI, Gemini CLI) and forwards them — normalized to Exabeam CIM — to a local JSONL audit log and/or a SIEM webhook.
+`agent-sensor` is an endpoint collector for Agent Behavior Analytics. It captures events from AI CLI tools (Claude Code, Codex CLI, Gemini CLI), Antigravity, and the OpenClaw gateway, and forwards them — normalized to Exabeam CIM — to a local JSONL audit log and/or a SIEM webhook.
 
 ---
 
@@ -20,11 +20,12 @@ Running `agent-sensor` without a subcommand is equivalent to `agent-sensor run`.
 |------|---------|-------------|
 | `-c, --config <PATH>` | `~/.agent-sensor/config.toml` | Path to config file |
 | `--log-level <LEVEL>` | `info` | Log verbosity: `error`, `warn`, `info`, `debug`, `trace` |
-| `--hook-port <PORT>` | `0` (OS-assigned) | Port for the hook server. All three CLI paths (`/claude`, `/codex`, `/gemini`) are served on this port. Use `4982` for a stable well-known port. |
+| `--hook-port <PORT>` | `4982` | Port for the hook server. All three CLI paths (`/claude`, `/codex`, `/gemini`) are served on this port. `--auto-config` bakes this port into the hook wrappers. Passing `0` is meant to request an OS-assigned port, but in 1.0.5 it still binds `4982` — pass an explicit free port instead. |
 | `--port-range <MIN-MAX>` | _(none)_ | Constrain all hook port binds to this range, e.g. `10000-11000`. Ephemeral ports outside the range exit with code 3; explicit ports outside the range exit with code 78. |
-| `--auto-config` | — | Install hooks for Claude Code, Codex CLI, and Gemini CLI, and write a default `config.toml` (never overwrites an existing one). |
+| `--auto-config` | — | Install hooks for Claude Code, Codex CLI, and Gemini CLI, and write a default `config.toml` (never overwrites an existing one). Adds an `[openclaw]` block when `~/.openclaw/openclaw.json` exists. |
+| `--capture-content` | — | With `--auto-config`: forward prompt and response text instead of `[REDACTED:*]`. Writes `censor_request`/`censor_response = false` into the generated config; no effect if `config.toml` already exists. |
 | `--dry-run` | — | Preview changes for `--auto-config` or `--enable-local-encryption` without modifying any files. |
-| `--enable-local-encryption` | — | Encrypt JSONL and SQLite files at rest. Requires `AGENT_SENSOR_KEY` env var. |
+| `--enable-local-encryption` | — | Encrypt the JSONL sink and the DLQ at rest. Requires the env var named by `[encryption] key_env_var` (default `AGENT_SENSOR_KEY`). The SQLite sink is **not** encrypted. |
 | `--project-dir <PATH>` | `~/.agent-sensor` | Project directory for registry lookup (useful when running multiple instances). |
 
 > **Security note:** Never pass bearer tokens as CLI flags — they appear in `ps aux`.
@@ -94,12 +95,13 @@ Install `agent-sensor` as a background service.
 agent-sensor install-service
 
 # Windows — scheduled task (no admin required)
-agent-sensor install-service --use-scheduled-task
+agent-sensor install-service
 ```
 
 | Flag | Description |
 |------|-------------|
-| `--use-scheduled-task` | Install as a Windows ONLOGON scheduled task instead of a Windows Service. Ignored on macOS. |
+| `--use-windows-service` | Windows only: install a Windows Service (SCM) instead of the default ONLOGON scheduled task. Requires administrator rights and runs as LocalSystem, which usually cannot read your agent CLIs' files — avoid unless you have a specific reason. Ignored on macOS. |
+| `--use-scheduled-task` | Deprecated no-op — the scheduled task is now the Windows default. Still accepted so existing deployment scripts keep working. |
 | `--hook-port <PORT>` | Port to embed in the service manifest. Default port is 4982 |
 | `--port-range <MIN-MAX>` | Port range constraint to embed in the service manifest. |
 | `--project-dir <PATH>` | Sets `AGENT_SENSOR_PROJECT_DIR` in the service environment. |
@@ -164,6 +166,17 @@ Print available and all known source slugs as JSON. Used by the installer wizard
 
 ```sh
 agent-sensor detect-sources
+# {"all":["claude-code-cli","claude-desktop","antigravity","openclaw-ws"],"available":[...]}
+```
+
+---
+
+### `decrypt-events <PATH>`
+
+Decrypt a file written with `--enable-local-encryption` and print it to stdout. `replay-dlq` decrypts automatically.
+
+```sh
+agent-sensor decrypt-events ~/.agent-sensor/events.jsonl > events.decrypted.jsonl
 ```
 
 ---
@@ -206,7 +219,7 @@ Edit `~/.agent-sensor/config.toml`:
 [[sinks]]
 kind = "webhook"
 url = "https://your-exabeam-collector.example.com/agent-sensor"
-token_file = "~/.agent-sensor/webhook.token"
+token_file = "/Users/you/.agent-sensor/webhook.token"   # absolute path — ~ is not expanded
 ```
 
 Save the webhook bearer token:
@@ -235,9 +248,151 @@ agent-sensor metrics | grep agent_sensor_hook_events_received_total
 
 # Filter by source
 jq 'select(.framework=="claude_code")' ~/.agent-sensor/events.jsonl
+jq 'select(.framework=="openclaw")' ~/.agent-sensor/events.jsonl
 
 # Session starts only
-jq 'select(.event_type=="session_start") | {ts, session_id, framework}' ~/.agent-sensor/events.jsonl
+jq 'select(.type=="session_start") | {ts, session, framework}' ~/.agent-sensor/events.jsonl
+
+# Prompts flagged for injection
+jq 'select(.has_injection==true)
+    | {ts, session, injection_patterns, triggered_rules, max_severity}' ~/.agent-sensor/events.jsonl
+```
+
+If local encryption is enabled, decrypt first: `agent-sensor decrypt-events ~/.agent-sensor/events.jsonl | jq …`.
+
+### Event format
+
+Each line of the JSONL sink is one event, schema `observra:1.1`. Common top-level fields:
+
+| Field | Description |
+|-------|-------------|
+| `ts` | Event timestamp (RFC 3339, UTC) |
+| `type` | `session_start`, `session_end`, `user`, `turn`, `turn_duration`, `tool_start`, `tool_end`, `tool_error`, `agent_end`, `forwarder_started` |
+| `session` | Short session identifier. The full identifier is in `data.session_key`. |
+| `framework` / `agent` | Source, e.g. `claude_code`, `openclaw`, or `agent_sensor` for the agent-sensor's own events |
+| `text` | Prompt or response text — `[REDACTED:*]` unless content capture is on |
+| `has_injection`, `injection_patterns`, `triggered_rules`, `max_severity` | Detection results, present when a rule fired |
+| `host`, `user`, `os`, `arch`, `forwarder`, `schema` | Endpoint and agent-sensor metadata |
+| `data` | Source-specific detail, e.g. `action`, `session_key`, `vendor` |
+
+> **Note:** For OpenClaw, `session` is the first 8 characters of a key such as `agent:main:main`, so different sessions of the same agent share a `session` value. Use `data.session_key` to tell OpenClaw sessions apart.
+
+---
+
+## Configuration Reference
+
+`~/.agent-sensor/config.toml` is generated by `--auto-config` and never overwritten afterwards. The TOML loader does **not** expand `~` — use absolute paths. Restart the agent-sensor after every change, and run `agent-sensor check-config` first (it does not catch every runtime error: a webhook sink without a token, for example, passes `check-config` but exits with code 78 on start).
+
+### `[sources]`
+
+Sources are detected automatically — `[sources]` takes no keys. Run `agent-sensor detect-sources` to see what was found.
+
+| Source slug | Detected when |
+|-------------|---------------|
+| `claude-code-cli` | Claude Code is installed |
+| `claude-desktop` | Claude Desktop is installed |
+| `antigravity` | `~/.gemini/antigravity-cli` exists |
+| `openclaw-ws` | `[openclaw]` is configured (see below) |
+
+Codex CLI and Gemini CLI events arrive through the hook server (`/codex`, `/gemini`) rather than a source.
+
+### `[[sinks]]`
+
+Each `[[sinks]]` table is one destination. Every event is sent to every sink.
+
+| Key | Applies to | Description |
+|-----|-----------|-------------|
+| `kind` | all | `jsonl`, `sqlite`, `webhook`, or `chroma` |
+| `name` | all | Sink name, used by `replay-dlq --sink <NAME>` and in logs |
+| `channel_capacity` | all | In-memory queue size for the sink |
+| `path` | `jsonl`, `sqlite` | Absolute file path |
+| `rotation_size_mb`, `max_rotated_files` | `jsonl` | Rotation (defaults `100` and `5`) |
+| `url` | `webhook`, `chroma` | Destination URL |
+| `token_file` | `webhook` | File containing the bearer token (or set `AGENT_SENSOR_WEBHOOK_TOKEN`). Required. |
+| `max_attempts`, `base_delay_ms`, `max_delay_ms` | `webhook` | Retry policy (defaults `6`, `1000`, `30000`). After the last attempt, the event is written to `dlq.jsonl`. |
+| `chroma_collection` | `chroma` | Collection name (created if missing) |
+| `chroma_api_version` | `chroma` | Chroma HTTP API version. **Set `"v2"` for Chroma 1.x** — the default fails with HTTP 405 and those events are not saved to the DLQ. |
+
+**JSONL** (default):
+
+```toml
+[[sinks]]
+kind = "jsonl"
+path = "/Users/you/.agent-sensor/events.jsonl"
+rotation_size_mb = 100
+max_rotated_files = 5
+```
+
+**SQLite** — one row per event in table `events` (WAL mode). Not encrypted by `--enable-local-encryption`. In 1.0.5 the `prompt` column is not populated; read prompt text from the JSONL sink.
+
+```toml
+[[sinks]]
+kind = "sqlite"
+name = "local-db"
+path = "/Users/you/.agent-sensor/events.db"
+```
+
+**Webhook** — see [Forward events to Exabeam](#forward-events-to-exabeam).
+
+**Chroma** — each event is stored as a document in a Chroma collection, for semantic search over agent activity.
+
+```toml
+[[sinks]]
+kind = "chroma"
+name = "chroma"
+url = "http://localhost:8000"
+chroma_collection = "agent_sensor_events"
+chroma_api_version = "v2"
+```
+
+### `[redaction]`
+
+Prompt and response text is replaced with `[REDACTED:*]` before events leave the host. Redaction runs **after** detection, so injection scanning and SIEM rules see the full text either way. Built-in patterns (AWS keys, bearer tokens, JWTs, API keys, passwords, emails, IPs) are always removed.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `censor_request` | `true` | Redact prompt text. `--auto-config --capture-content` writes `false`. |
+| `censor_response` | `true` | Redact model output. `--auto-config --capture-content` writes `false`. |
+| `max_request_chars` | `256` | Maximum prompt excerpt length when not censored (`0` = unlimited) |
+| `max_response_chars` | `256` | Maximum response excerpt length when not censored (`0` = unlimited) |
+
+### `[encryption]`
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `enabled` | `false` | Encrypt the JSONL sink and `dlq.jsonl` at rest (same as `--enable-local-encryption`) |
+| `key_env_var` | `AGENT_SENSOR_KEY` | Environment variable holding the key |
+
+Read encrypted files with `agent-sensor decrypt-events <PATH>`.
+
+### `[openclaw]`
+
+| Key | Description |
+|-----|-------------|
+| `enabled` | `true` to connect to the OpenClaw gateway |
+| `host`, `port` | Gateway address, taken from `~/.openclaw/openclaw.json` by `--auto-config` |
+| `token_file` / `token` | Optional. Overrides the gateway token read from `~/.openclaw/openclaw.json` (`gateway.auth.token`). |
+
+The token is read when the agent-sensor starts — restart it after rotating the gateway token. See [Installation → OpenClaw](installation.md#openclaw).
+
+### `[dedup]`
+
+Agent CLIs can fire both global and project-level hooks for one action. Dedup drops a payload already seen within the window. Enabled by default; distinct tool calls (unique `tool_use_id`) are never merged.
+
+```toml
+[dedup]
+enabled = true
+window_ms = 2000
+```
+
+### `[reconcile]`
+
+Off by default. When enabled, a long-running agent-sensor periodically detects agent CLIs installed after setup and installs their hooks (user scope only; already-configured CLIs are skipped).
+
+```toml
+[reconcile]
+enabled = true
+interval_secs = 300
 ```
 
 ---
@@ -258,6 +413,6 @@ jq 'select(.event_type=="session_start") | {ts, session_id, framework}' ~/.agent
 | Variable | Description |
 |----------|-------------|
 | `RUST_LOG` | Log filter, e.g. `RUST_LOG=debug` |
-| `AGENT_SENSOR_KEY` | Encryption key for `--enable-local-encryption` |
+| `AGENT_SENSOR_KEY` | Encryption key for `--enable-local-encryption` (name configurable via `[encryption] key_env_var`) |
 | `AGENT_SENSOR_WEBHOOK_TOKEN` | Bearer token for webhook sink (alternative to `token_file` in config) |
 | `AGENT_SENSOR_PROJECT_DIR` | Project directory (same as `--project-dir` flag) |

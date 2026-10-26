@@ -20,7 +20,7 @@
 <title>Exabeam Agent Sensor — AI Agent Behavior Analytics</title>
 <link rel="canonical" href="https://agentsensor.exabeam.com/" />
 <link rel="icon" type="image/x-icon" href="https://www.exabeam.com/favicon.ico">
-<meta name="description" content="Exabeam Agent Sensor is an endpoint binary that captures agentic activity from Claude Code, Codex CLI, and Gemini CLI, normalizes it to Exabeam Common Information Model (CIM), and forwards it to the Exabeam platform." />
+<meta name="description" content="Exabeam Agent Sensor is an endpoint binary that captures agentic activity from Claude Code, Codex CLI, Gemini CLI, and OpenClaw, normalizes it to Exabeam Common Information Model (CIM), and forwards it to the Exabeam platform." />
 <!-- <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22><rect width=%2224%22 height=%2224%22 rx=%225%22 fill=%22%23006bff%22/></svg>"> -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -29,7 +29,7 @@
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
   "name": "Exabeam Agent Sensor",
-  "description": "Endpoint binary that captures agentic activity from Claude Code, Codex CLI, and Gemini CLI, normalizes it to the Exabeam Common Information Model (CIM), and forwards it to the Exabeam platform.",
+  "description": "Endpoint binary that captures agentic activity from Claude Code, Codex CLI, Gemini CLI, and OpenClaw, normalizes it to the Exabeam Common Information Model (CIM), and forwards it to the Exabeam platform.",
   "applicationCategory": "SecurityApplication",
   "operatingSystem": "macOS, Windows",
   "downloadUrl": "https://github.com/ExabeamLabs/agent-sensor-dist/releases",
@@ -150,7 +150,7 @@
     border:1px solid var(--border);
     border-radius:var(--radius);
     padding:22px 26px;
-    max-width:780px;
+    max-width:960px;
     flex-wrap:wrap;
     gap:14px;
   }
@@ -303,6 +303,11 @@
     color:var(--green);background:rgba(0,157,0,0.08);border:1px solid rgba(0,157,0,0.25);
     padding:2px 8px;border-radius:100px;letter-spacing:0.04em;text-transform:uppercase;
   }
+  .card h3 .pill{
+    display:inline-block;vertical-align:middle;margin-left:6px;font-family:'Inter';font-size:10px;font-weight:700;
+    color:var(--green);background:rgba(0,157,0,0.08);border:1px solid rgba(0,157,0,0.25);
+    padding:2px 8px;border-radius:100px;letter-spacing:0.04em;text-transform:uppercase;
+  }
   .cmd-desc{color:var(--text-dim);font-size:14px;}
 
   /* ---------- config sink example ---------- */
@@ -363,6 +368,9 @@
     .navlinks{display:none;}
     .cmd-row{grid-template-columns:1fr;gap:6px;}
   }
+  /* Phone width: the header CTA does not fit next to the brand; downloads stay reachable on the page */
+  @media (max-width:640px){ header .btn-primary{display:none;} .prose table{display:block;overflow-x:auto;} }
+  .two-col > *{min-width:0;}
 </style>
 </head>
 <body>
@@ -403,6 +411,8 @@
         <div class="flow-item"><span class="tag">CLI</span>&nbsp;Codex CLI</div>
         <span class="flow-arrow">＋</span>
         <div class="flow-item"><span class="tag">CLI</span>&nbsp;Gemini CLI</div>
+        <span class="flow-arrow">＋</span>
+        <div class="flow-item"><span class="tag">Gateway</span>&nbsp;OpenClaw</div>
         <span class="flow-arrow">→</span>
         <div class="flow-dest">Agent Sensor</div>
         <span class="flow-arrow">→</span>
@@ -416,7 +426,7 @@
     <div class="wrap">
       <div class="section-head">
         <div class="kicker">Overview</div>
-        <h2>One sensor, every AI CLI on the endpoint</h2>
+        <h2>One sensor, every AI agent on the endpoint</h2>
         <p>Agent Sensor captures session lifecycle, user prompts, tool invocations, token usage, and agent costs — all normalized to Exabeam Common Information Model (CIM) for SIEM threat detection and investigation. Binaries are published as GitHub Releases, so there's no build toolchain required to install.</p>
       </div>
       <div class="grid3">
@@ -431,6 +441,20 @@
         <div class="card">
           <h3>Token Usage &amp; Cost</h3>
           <p>Records token consumption and agent cost data alongside behavioral telemetry.</p>
+        </div>
+      </div>
+      <div class="grid3" style="margin-top:20px;">
+        <div class="card">
+          <h3>OpenClaw Gateway <span class="pill">New in 1.0.5</span></h3>
+          <p>Detects a local OpenClaw install and streams live agent activity from its gateway over WebSocket — no hooks to install, and the gateway token never leaves OpenClaw's own config.</p>
+        </div>
+        <div class="card">
+          <h3>Redacted by Default</h3>
+          <p>Prompt and response text is replaced with <code>[REDACTED:*]</code> before events leave the host. Detection still sees the full text. Opt in to content capture with <code>--capture-content</code>.</p>
+        </div>
+        <div class="card">
+          <h3>Encrypted at Rest</h3>
+          <p>Optional encryption for the local event log and dead-letter queue, with <code>decrypt-events</code> to read them back.</p>
         </div>
       </div>
     </div>
@@ -450,9 +474,9 @@
           <h3>macOS — Apple Silicon</h3>
           <p>aarch64-apple-darwin · M1 / M2 / M3</p>
           <div class="platform-meta"><b>OS:</b> 11.0 (Big Sur) or later</div>
-          <a class="dl-btn" href="https://github.com/ExabeamLabs/agent-sensor-dist/releases/download/v1.0.4/agent-sensor-v1.0.4-aarch64-apple-darwin" download>
+          <a class="dl-btn" href="https://github.com/ExabeamLabs/agent-sensor-dist/releases/download/v1.0.5/agent-sensor-v1.0.5-aarch64-apple-darwin" download>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            Download v1.0.4
+            Download v1.0.5
           </a>
         </div>
         <div class="card platform-card">
@@ -460,9 +484,9 @@
           <h3>macOS — Intel</h3>
           <p>x86_64-apple-darwin</p>
           <div class="platform-meta"><b>OS:</b> 11.0 (Big Sur) or later</div>
-          <a class="dl-btn" href="https://github.com/ExabeamLabs/agent-sensor-dist/releases/download/v1.0.4/agent-sensor-v1.0.4-x86_64-apple-darwin" download>
+          <a class="dl-btn" href="https://github.com/ExabeamLabs/agent-sensor-dist/releases/download/v1.0.5/agent-sensor-v1.0.5-x86_64-apple-darwin" download>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            Download v1.0.4
+            Download v1.0.5
           </a>
         </div>
         <div class="card platform-card">
@@ -470,13 +494,13 @@
           <h3>Windows</h3>
           <p>x86_64-pc-windows-gnu</p>
           <div class="platform-meta"><b>OS:</b> Windows 10 or 11 (x86_64)</div>
-          <a class="dl-btn" href="https://github.com/ExabeamLabs/agent-sensor-dist/releases/download/v1.0.4/agent-sensor-v1.0.4-x86_64-pc-windows-gnu.exe" download>
+          <a class="dl-btn" href="https://github.com/ExabeamLabs/agent-sensor-dist/releases/download/v1.0.5/agent-sensor-v1.0.5-x86_64-pc-windows-gnu.exe" download>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            Download v1.0.4
+            Download v1.0.5
           </a>
         </div>
       </div>
-      <p style="font-size:13px;color:var(--text-mute);margin-top:16px;"</a>.</p>
+      <p style="font-size:13px;color:var(--text-mute);margin-top:16px;">All builds, checksums, and release notes are on the <a href="https://github.com/ExabeamLabs/agent-sensor-dist/releases" target="_blank" rel="noopener">GitHub Releases page</a>. The Windows binary is signed by Exabeam (DigiCert).</p>
     </div>
   </section>
 
@@ -486,7 +510,7 @@
       <div class="section-head">
         <div class="kicker">Quick Install</div>
         <h2>Up and running in under a minute</h2>
-        <p>Download the binary for your platform, then install hooks for Claude Code, Codex CLI, and Gemini CLI with a single flag.</p>
+        <p>Download the binary for your platform, then install hooks for Claude Code, Codex CLI, and Gemini CLI — and connect a local OpenClaw gateway — with a single flag.</p>
       </div>
 
       <div class="tabs" id="installTabs">
@@ -498,8 +522,8 @@
       <div class="tabpanel active" id="panel-mac-arm">
         <div class="codeblock">
           <div class="codehead"><span>Terminal</span><button class="copy" data-copy="cmd-mac-arm">Copy</button></div>
-          <pre id="cmd-mac-arm"><span class="c1"># Replace VERSION with the release you want, e.g. 1.0.4</span>
-<span class="c2">VERSION</span>=1.0.4
+          <pre id="cmd-mac-arm"><span class="c1"># Replace VERSION with the release you want, e.g. 1.0.5</span>
+<span class="c2">VERSION</span>=1.0.5
 sudo curl -fsSL https://github.com/ExabeamLabs/agent-sensor-dist/releases/download/v${VERSION}/agent-sensor-v${VERSION}-aarch64-apple-darwin \
   -o /usr/local/bin/agent-sensor
 sudo chmod +x /usr/local/bin/agent-sensor</pre>
@@ -509,8 +533,8 @@ sudo chmod +x /usr/local/bin/agent-sensor</pre>
       <div class="tabpanel" id="panel-mac-intel">
         <div class="codeblock">
           <div class="codehead"><span>Terminal</span><button class="copy" data-copy="cmd-mac-intel">Copy</button></div>
-          <pre id="cmd-mac-intel"><span class="c1"># Replace VERSION with the release you want, e.g. 1.0.4</span>
-<span class="c2">VERSION</span>=1.0.4
+          <pre id="cmd-mac-intel"><span class="c1"># Replace VERSION with the release you want, e.g. 1.0.5</span>
+<span class="c2">VERSION</span>=1.0.5
 sudo curl -fsSL https://github.com/ExabeamLabs/agent-sensor-dist/releases/download/v${VERSION}/agent-sensor-v${VERSION}-x86_64-apple-darwin \
   -o /usr/local/bin/agent-sensor
 sudo chmod +x /usr/local/bin/agent-sensor</pre>
@@ -524,13 +548,18 @@ sudo chmod +x /usr/local/bin/agent-sensor</pre>
 # 2. Rename it to agent-sensor.exe
 # 3. Move it to a directory on your PATH, e.g. C:\Program Files\agent-sensor\</span>
 
+<span class="c1"># Confirm the Exabeam signature (Status should be "Valid")</span>
+Get-AuthenticodeSignature .\agent-sensor.exe | Format-List Status, SignerCertificate
+
 agent-sensor --version</pre>
         </div>
       </div>
 
       <div class="codeblock" style="margin-top:8px;">
         <div class="codehead"><span>First-time setup</span><button class="copy" data-copy="cmd-quickstart">Copy</button></div>
-        <pre id="cmd-quickstart"><span class="c1"># 1. Install hooks for Claude Code, Codex CLI, and Gemini CLI + write default config</span>
+        <pre id="cmd-quickstart"><span class="c1"># 1. From your home directory, install hooks for Claude Code, Codex CLI, and Gemini CLI,</span>
+<span class="c1">#    connect OpenClaw if it is installed, and write the default config</span>
+cd ~
 agent-sensor --auto-config
 
 <span class="c1"># 2. Install and start as a background service</span>
@@ -566,7 +595,7 @@ max_rotated_files = 5
 <span class="c1"># [[sinks]]</span>
 <span class="c1"># kind = "webhook"</span>
 <span class="c1"># url = "https://your-collector.example.com/agent-sensor"</span>
-<span class="c1"># token_file = "~/.agent-sensor/webhook.token"</span></pre>
+<span class="c1"># token_file = "/Users/YOU/.agent-sensor/webhook.token"   # absolute path — ~ is not expanded</span></pre>
         </div>
         <div>
           <h3 style="font-size:18px;margin:0 0 12px;">Environment variables</h3>
@@ -614,7 +643,7 @@ max_rotated_files = 5
           </div>
           <div class="cmd-row">
             <div class="cmd-name">install-service</div>
-            <div class="cmd-desc">Install as a background service: launchd plist on macOS (user space, no admin required), or ONLOGON scheduled task on Windows (no admin required). Use <code>--use-scheduled-task</code> on Windows.</div>
+            <div class="cmd-desc">Install as a background service: launchd plist on macOS (user space, no admin required), or ONLOGON scheduled task on Windows (no admin required).</div>
           </div>
           <div class="cmd-row">
             <div class="cmd-name">uninstall-service</div>
@@ -634,7 +663,11 @@ max_rotated_files = 5
           </div>
           <div class="cmd-row">
             <div class="cmd-name">detect-sources</div>
-            <div class="cmd-desc">Print available and all known source slugs as JSON. Used by the installer wizard.</div>
+            <div class="cmd-desc">Print available and all known source slugs as JSON (<code>claude-code-cli</code>, <code>claude-desktop</code>, <code>antigravity</code>, <code>openclaw-ws</code>). Used by the installer wizard.</div>
+          </div>
+          <div class="cmd-row">
+            <div class="cmd-name">decrypt-events &lt;PATH&gt;<span class="pill">new</span></div>
+            <div class="cmd-desc">Decrypt a file written with <code>--enable-local-encryption</code> and print it to stdout. <code>replay-dlq</code> decrypts automatically.</div>
           </div>
           <div class="cmd-row">
             <div class="cmd-name">update</div>
@@ -649,11 +682,12 @@ max_rotated_files = 5
           <tr><th>Flag</th><th>Default</th><th>Description</th></tr>
           <tr><td><code>-c, --config &lt;PATH&gt;</code></td><td>~/.agent-sensor/config.toml</td><td>Path to config file</td></tr>
           <tr><td><code>--log-level &lt;LEVEL&gt;</code></td><td>info</td><td>error, warn, info, debug, trace</td></tr>
-          <tr><td><code>--hook-port &lt;PORT&gt;</code></td><td>0 (OS-assigned)</td><td>Port for the hook server, serving /claude, /codex, /gemini</td></tr>
+          <tr><td><code>--hook-port &lt;PORT&gt;</code></td><td>4982</td><td>Port for the hook server, serving /claude, /codex, /gemini</td></tr>
           <tr><td><code>--port-range &lt;MIN-MAX&gt;</code></td><td>none</td><td>Constrain hook port binds to this range</td></tr>
-          <tr><td><code>--auto-config</code></td><td>—</td><td>Install hooks for all supported CLIs and write default config</td></tr>
+          <tr><td><code>--auto-config</code></td><td>—</td><td>Install hooks for all supported CLIs, connect OpenClaw if installed, and write default config</td></tr>
+          <tr><td><code>--capture-content</code></td><td>—</td><td>With --auto-config: forward prompt and response text instead of [REDACTED:*]</td></tr>
           <tr><td><code>--dry-run</code></td><td>—</td><td>Preview changes without modifying any files</td></tr>
-          <tr><td><code>--enable-local-encryption</code></td><td>—</td><td>Encrypt JSONL/SQLite files at rest (requires AGENT_SENSOR_KEY)</td></tr>
+          <tr><td><code>--enable-local-encryption</code></td><td>—</td><td>Encrypt the JSONL log and dead-letter queue at rest (requires AGENT_SENSOR_KEY). SQLite is not encrypted.</td></tr>
           <tr><td><code>--project-dir &lt;PATH&gt;</code></td><td>~/.agent-sensor</td><td>Project directory for registry lookup</td></tr>
         </table>
       </div>
@@ -714,6 +748,10 @@ agent-sensor --hook-port 4992</pre>
         <div class="card">
           <h3>No events appearing</h3>
           <p>Verify the forwarder is running, confirm hooks are installed in <code style="background:rgba(15,25,50,0.06);padding:1px 5px;border-radius:4px;">~/.claude/settings.json</code>, then send a manual test event via the hook server.</p>
+        </div>
+        <div class="card">
+          <h3>No OpenClaw events</h3>
+          <p>Check <code style="background:rgba(15,25,50,0.06);padding:1px 5px;border-radius:4px;">~/.agent-sensor/forwarder.log</code>: <em>No OpenClaw token</em>, <em>WS connect failed</em> (gateway down or wrong port), or <em>connect rejected</em> (token mismatch). Restart the sensor after rotating the gateway token.</p>
         </div>
         <div class="card">
           <h3>macOS Gatekeeper blocks the binary</h3>

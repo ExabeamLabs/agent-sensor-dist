@@ -349,7 +349,7 @@
   .doc-breadcrumb a:hover{color:var(--green);}
   .doc-header h1{font-size:36px;margin:0 0 10px;}
   .doc-header p{color:var(--text-dim);font-size:16px;margin:0;max-width:640px;}
-  .doc-wrap{display:grid;grid-template-columns:230px 1fr;gap:56px;padding:48px 0 90px;align-items:start;}
+  .doc-wrap{display:grid;grid-template-columns:230px minmax(0,1fr);gap:56px;padding:48px 0 90px;align-items:start;}
   .doc-sidebar{position:sticky;top:96px;}
   .doc-sidebar .side-label{font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-mute);margin-bottom:14px;}
   .doc-sidebar a{display:block;padding:7px 0;font-size:14px;font-weight:600;color:var(--text-dim);border-left:2px solid transparent;padding-left:14px;margin-left:-15px;}
@@ -374,10 +374,13 @@
   .prose a{color:var(--blue-soft);}
   .doc-card-row{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:8px;}
   @media (max-width:920px){
-    .doc-wrap{grid-template-columns:1fr;}
+    .doc-wrap{grid-template-columns:minmax(0,1fr);}
     .doc-sidebar{position:static;}
     .doc-card-row{grid-template-columns:1fr;}
   }
+  /* Phone width: the header CTA does not fit next to the brand; downloads stay reachable on the page */
+  @media (max-width:640px){ header .btn-primary{display:none;} .prose table{display:block;overflow-x:auto;} }
+  .two-col > *{min-width:0;}
 </style>
 </head>
 <body>
@@ -422,13 +425,38 @@
       <div class="prose" style="margin-top:8px;">
         <p>Format follows <a href="https://keepachangelog.com/en/1.0.0/" target="_blank" rel="noopener">Keep a Changelog</a>. Versions follow <a href="https://semver.org/spec/v2.0.0.html" target="_blank" rel="noopener">Semantic Versioning</a>.</p>
 
-        <h2 style="border-top:none;">Unreleased</h2>
+        <h2 style="border-top:none;">1.0.5 — 2026-09-16</h2>
+        <h3>Added</h3>
+        <ul>
+          <li><strong>OpenClaw support.</strong> <code>--auto-config</code> detects a local OpenClaw install (<code>~/.openclaw/openclaw.json</code>) and adds an <code>[openclaw]</code> block to the generated <code>config.toml</code>. The agent-sensor connects to the OpenClaw gateway over WebSocket and streams live agent activity through the same pipeline and sinks as the CLI hooks. The gateway auth token is read from OpenClaw's own config, so no copy of the secret is written to <code>config.toml</code>. See <a href="installation.html#openclaw">Installation → OpenClaw</a>.</li>
+          <li><strong>Antigravity source.</strong> Tails Antigravity transcripts under <code>~/.gemini</code> (source slug <code>antigravity</code>).</li>
+          <li><code>--capture-content</code> flag. Prompts and model output are censored (<code>[REDACTED:*]</code>) by default before events leave the host; <code>--capture-content</code> writes <code>censor_request = false</code> / <code>censor_response = false</code> into the generated config so the text is forwarded. Injection scanning and detection rules see the full text either way.</li>
+          <li><code>decrypt-events</code> subcommand to read back a file written with <code>--enable-local-encryption</code>. <code>replay-dlq</code> decrypts automatically.</li>
+        </ul>
+        <h3>Changed</h3>
+        <ul>
+          <li><code>--enable-local-encryption</code> covers the JSONL sink and the dead-letter queue. The SQLite sink is <strong>not</strong> encrypted at rest.</li>
+        </ul>
+        <h3>Security</h3>
+        <ul>
+          <li>The Windows binary is now Authenticode-signed (DigiCert). Releases are created as drafts and are only published after the Windows <code>.exe</code> has been signed and verified, so an unsigned Windows binary is never publicly downloadable.</li>
+        </ul>
+        <h3>Known issues</h3>
+        <ul>
+          <li><code>agent-sensor --version</code> and <code>agent-sensor status</code> report <code>1.0.4</code> on the 1.0.5 binaries. Verify the version you installed by its SHA-256 against the release assets.</li>
+          <li><code>replay-dlq</code> fails with <code>missing field `triggered_rules`</code> for dead-letter entries whose event triggered no detection rule, so those events cannot be replayed.</li>
+          <li>OpenClaw: the <code>session</code> field holds only the first 8 characters of the session key (e.g. <code>agent:ma</code>), so sessions of the same agent share a value. Use <code>data.session_key</code>.</li>
+          <li>OpenClaw: a rotated gateway token is not picked up until the agent-sensor is restarted.</li>
+          <li>Chroma sink: with Chroma 1.x, set <code>chroma_api_version = "v2"</code>. Otherwise writes fail with HTTP 405 and those events are not saved to the dead-letter queue.</li>
+        </ul>
+
+        <h2>1.0.4 — 2026-06-26</h2>
         <h3>Added</h3>
         <ul>
           <li>Initial public release.</li>
         </ul>
 
-        <p style="margin-top:32px;">For the latest tagged builds and release notes, see the <a href="https://github.com/ExabeamLabs/agent-sensor-dist/releases" target="_blank" rel="noopener">Releases page</a> — the current latest release is <strong>v1.0.4</strong>.</p>
+        <p style="margin-top:32px;">For the latest tagged builds and release notes, see the <a href="https://github.com/ExabeamLabs/agent-sensor-dist/releases" target="_blank" rel="noopener">Releases page</a> — the current latest release is <strong>v1.0.5</strong>.</p>
       </div>
 
     </div>
